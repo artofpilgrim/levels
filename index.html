@@ -125,13 +125,82 @@
     align-items: center;
     justify-content: center;
   }
-  .stage canvas{
+  .canvas-wrap{
+    position: relative;
+    display: inline-block;
     max-width: calc(100% - 48px);
     max-height: calc(100% - 48px);
+    line-height: 0;
+  }
+  .canvas-wrap canvas{
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 44px - 48px);
     box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 0 1px oklch(0.10 0.006 80);
     image-rendering: pixelated;
   }
-  .stage canvas.fit-smooth{ image-rendering: auto; }
+  .canvas-wrap canvas.fit-smooth{ image-rendering: auto; }
+
+  .crop-overlay{
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    cursor: crosshair;
+    user-select: none;
+    touch-action: none;
+  }
+  .crop-rect{
+    position: absolute;
+    border: 1px solid oklch(0.96 0.004 80);
+    box-shadow: 0 0 0 99999px oklch(0.08 0.006 80 / 0.55);
+    pointer-events: none;
+  }
+  .crop-rect::before,
+  .crop-rect::after{
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(to right, oklch(0.40 0.006 80 / 0.5) 1px, transparent 1px) 33.33% 0/33.33% 100%,
+      linear-gradient(to right, oklch(0.40 0.006 80 / 0.5) 1px, transparent 1px) 66.66% 0/33.33% 100%,
+      linear-gradient(to bottom, oklch(0.40 0.006 80 / 0.5) 1px, transparent 1px) 0 33.33%/100% 33.33%,
+      linear-gradient(to bottom, oklch(0.40 0.006 80 / 0.5) 1px, transparent 1px) 0 66.66%/100% 33.33%;
+  }
+  .crop-rect.empty{ box-shadow: 0 0 0 99999px oklch(0.08 0.006 80 / 0.55); border-color: transparent; }
+  .crop-empty-msg{
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--fg-2);
+    font-size: 12.5px;
+    background: oklch(0.16 0.006 80 / 0.85);
+    padding: 6px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    letter-spacing: 0.01em;
+  }
+
+  .aspect-select{
+    height: 26px;
+    background: transparent;
+    color: var(--fg);
+    border: 0;
+    border-radius: 4px;
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--fg-2) 50%), linear-gradient(-45deg, transparent 50%, var(--fg-2) 50%);
+    background-position: calc(100% - 9px) 50%, calc(100% - 5px) 50%;
+    background-size: 4px 4px;
+    background-repeat: no-repeat;
+    padding-right: 18px;
+  }
+  .aspect-select:hover{ background-color: oklch(0.30 0.006 80 / 0.5); }
+  .aspect-select option{ background: var(--panel); color: var(--fg); }
 
   .empty{
     position: absolute;
@@ -1089,6 +1158,16 @@
       h("circle", { cx: "9", cy: "9", r: "1.5" }),
       h("path", { d: "m3 17 5-5 4 4 3-3 6 6" })
     ),
+    crop: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M6 2v14a2 2 0 0 0 2 2h14" }),
+      h("path", { d: "M2 6h14a2 2 0 0 1 2 2v14" })
+    ),
+    check: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M4 12l5 5L20 6" })
+    ),
+    close: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M6 6l12 12M6 18L18 6" })
+    ),
   };
 
   /* Main app ────────────────────────────────────────────────── */
@@ -1100,6 +1179,10 @@
     const [drag, setDrag] = useState(false);
     const [showOriginal, setShowOriginal] = useState(false);
     const [toast, setToast] = useState(null);
+    const [cropMode, setCropMode] = useState(false);
+    const [crop, setCrop] = useState(null);
+    const [draftCrop, setDraftCrop] = useState(null);
+    const [cropAspect, setCropAspect] = useState("free");
     const fileInputRef = useRef(null);
     const canvasRef = useRef(null);
 
@@ -1129,6 +1212,7 @@
         ctx.drawImage(img, 0, 0, w, hh);
         const data = ctx.getImageData(0, 0, w, hh);
         setImage({ name: file.name || "image", width: w, height: hh, srcImageData: data });
+        setCrop(null); setDraftCrop(null); setCropMode(false);
         URL.revokeObjectURL(url);
       };
       img.onerror = () => { showToast("Could not load that image", "error"); URL.revokeObjectURL(url); };
@@ -1169,8 +1253,12 @@
     useEffect(() => {
       const onKey = (e) => {
         const target = e.target;
-        const isField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+        const isField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
         if (isField) return;
+        if (cropMode) {
+          if (e.key === "Enter") { e.preventDefault(); applyCrop(); return; }
+          if (e.key === "Escape") { e.preventDefault(); cancelCrop(); return; }
+        }
         if (e.code === "Space") { e.preventDefault(); setShowOriginal(true); }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && image && !window.getSelection().toString()) {
           e.preventDefault();
@@ -1180,7 +1268,7 @@
           e.preventDefault();
           downloadImage();
         }
-        if (e.key === "i" && image) setSettings((s) => Object.assign({}, s, { invert: !s.invert }));
+        if (e.key === "i" && image && !cropMode) setSettings((s) => Object.assign({}, s, { invert: !s.invert }));
       };
       const onUp = (e) => { if (e.code === "Space") setShowOriginal(false); };
       window.addEventListener("keydown", onKey);
@@ -1189,12 +1277,26 @@
         window.removeEventListener("keydown", onKey);
         window.removeEventListener("keyup", onUp);
       };
-    }, [image, settings]);
+    }, [image, settings, cropMode, draftCrop]);
+
+    const workingSrc = useMemo(() => {
+      if (!image) return null;
+      if (cropMode || !crop) return image.srcImageData;
+      const { x, y, w, h } = crop;
+      if (w <= 0 || h <= 0) return image.srcImageData;
+      const src = image.srcImageData;
+      const out = new ImageData(w, h);
+      for (let row = 0; row < h; row++) {
+        const srcStart = ((y + row) * src.width + x) * 4;
+        out.data.set(src.data.subarray(srcStart, srcStart + w * 4), row * w * 4);
+      }
+      return out;
+    }, [image, crop, cropMode]);
 
     const processedData = useMemo(() => {
-      if (!image) return null;
-      return processImage(image.srcImageData, settings);
-    }, [image, settings]);
+      if (!workingSrc) return null;
+      return processImage(workingSrc, settings);
+    }, [workingSrc, settings]);
 
     const histogram = useMemo(() => {
       if (!processedData) return null;
@@ -1205,18 +1307,18 @@
     }, [processedData]);
 
     useEffect(() => {
-      if (!image) return;
+      if (!workingSrc) return;
       const c = canvasRef.current;
       if (!c) return;
-      c.width = image.width;
-      c.height = image.height;
+      c.width = workingSrc.width;
+      c.height = workingSrc.height;
       const ctx = c.getContext("2d");
       if (showOriginal) {
-        ctx.putImageData(image.srcImageData, 0, 0);
+        ctx.putImageData(workingSrc, 0, 0);
       } else if (processedData) {
         ctx.putImageData(processedData, 0, 0);
       }
-    }, [image, processedData, showOriginal]);
+    }, [workingSrc, processedData, showOriginal]);
 
     function getExportBlob() {
       return new Promise((resolve) => {
@@ -1247,6 +1349,71 @@
       } catch (err) {
         showToast("Clipboard not available — try Download instead", "error");
       }
+    }
+
+    function enterCropMode() {
+      setDraftCrop(crop);
+      setCropMode(true);
+    }
+    function cancelCrop() {
+      setCropMode(false);
+      setDraftCrop(null);
+    }
+    function applyCrop() {
+      if (draftCrop && draftCrop.w >= 2 && draftCrop.h >= 2) {
+        setCrop(draftCrop);
+      }
+      setCropMode(false);
+      setDraftCrop(null);
+    }
+    function clearCrop() {
+      setCrop(null);
+      setDraftCrop(null);
+      setCropMode(false);
+    }
+
+    function beginCropDrag(e) {
+      if (!cropMode || !canvasRef.current || !workingSrc) return;
+      e.preventDefault();
+      const rectEl = canvasRef.current.getBoundingClientRect();
+      const srcW = workingSrc.width, srcH = workingSrc.height;
+      const sx = srcW / rectEl.width, sy = srcH / rectEl.height;
+      const startX = clamp((e.clientX - rectEl.left) * sx, 0, srcW);
+      const startY = clamp((e.clientY - rectEl.top) * sy, 0, srcH);
+      const update = (ev) => {
+        let cx = clamp((ev.clientX - rectEl.left) * sx, 0, srcW);
+        let cy = clamp((ev.clientY - rectEl.top) * sy, 0, srcH);
+        let dx = cx - startX, dy = cy - startY;
+        let aspect = cropAspect;
+        if (ev.shiftKey) aspect = "1:1";
+        if (aspect !== "free") {
+          const [aw, ah] = aspect.split(":").map(Number);
+          const ratio = aw / ah;
+          const adx = Math.abs(dx), ady = Math.abs(dy);
+          if (adx === 0 && ady === 0) { dx = 0; dy = 0; }
+          else if (adx / Math.max(ady, 0.0001) > ratio) {
+            dy = (dy >= 0 ? 1 : -1) * adx / ratio;
+          } else {
+            dx = (dx >= 0 ? 1 : -1) * ady * ratio;
+          }
+        }
+        let x = Math.min(startX, startX + dx);
+        let y = Math.min(startY, startY + dy);
+        let w = Math.abs(dx);
+        let hh = Math.abs(dy);
+        if (x < 0) { w += x; x = 0; }
+        if (y < 0) { hh += y; y = 0; }
+        if (x + w > srcW) w = srcW - x;
+        if (y + hh > srcH) hh = srcH - y;
+        setDraftCrop({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(hh) });
+      };
+      update(e);
+      const up = () => {
+        window.removeEventListener("pointermove", update);
+        window.removeEventListener("pointerup", up);
+      };
+      window.addEventListener("pointermove", update);
+      window.addEventListener("pointerup", up);
     }
 
     function resetAll() {
@@ -1301,13 +1468,34 @@
       ),
 
       h("div", { className: "stage" },
-        hasImage && h("canvas", { ref: canvasRef, className: image.width < 1000 ? "" : "fit-smooth" }),
+        hasImage && h("div", { className: "canvas-wrap" },
+          h("canvas", { ref: canvasRef, className: (workingSrc && workingSrc.width < 1000) ? "" : "fit-smooth" }),
+          cropMode && h("div", {
+            className: "crop-overlay",
+            onPointerDown: beginCropDrag,
+          },
+            draftCrop && draftCrop.w > 0 && draftCrop.h > 0
+              ? h("div", {
+                  className: "crop-rect",
+                  style: {
+                    left: (draftCrop.x / workingSrc.width) * 100 + "%",
+                    top: (draftCrop.y / workingSrc.height) * 100 + "%",
+                    width: (draftCrop.w / workingSrc.width) * 100 + "%",
+                    height: (draftCrop.h / workingSrc.height) * 100 + "%",
+                  },
+                })
+              : h("div", { className: "crop-rect empty", style: { left: 0, top: 0, width: "100%", height: "100%" } },
+                  h("span", { className: "crop-empty-msg" }, "Drag to define a crop")
+                )
+          )
+        ),
         hasImage && h("div", { className: "stage-overlay" },
           h("span", { className: "chip" }, image.name),
-          h("span", { className: "chip" }, image.width + " × " + image.height),
+          h("span", { className: "chip" }, (workingSrc ? workingSrc.width : image.width) + " × " + (workingSrc ? workingSrc.height : image.height)),
+          crop && !cropMode && h("span", { className: "chip", style: { color: "var(--accent)" } }, "cropped"),
           settings.invert && h("span", { className: "chip", style: { color: "var(--accent)" } }, "inverted")
         ),
-        hasImage && h("div", { className: "stage-controls" },
+        hasImage && !cropMode && h("div", { className: "stage-controls" },
           h("button", {
             className: "toggle-btn" + (showOriginal ? " held" : ""),
             onMouseDown: () => setShowOriginal(true),
@@ -1316,10 +1504,47 @@
             title: "Hold to compare with original",
           }, Icon.eye, " ", showOriginal ? "Original" : "Hold to compare"),
           h("button", {
+            className: "toggle-btn",
+            onClick: enterCropMode,
+            title: "Crop image",
+          }, Icon.crop, " Crop"),
+          crop && h("button", {
+            className: "toggle-btn",
+            onClick: clearCrop,
+            title: "Reset crop to full frame",
+          }, Icon.reset, " Reset crop"),
+          h("button", {
             className: "toggle-btn" + (settings.invert ? " on" : ""),
             onClick: () => setSettings((s) => Object.assign({}, s, { invert: !s.invert })),
             title: "Invert (I)",
           }, Icon.invert, " Invert")
+        ),
+        hasImage && cropMode && h("div", { className: "stage-controls" },
+          h("select", {
+            className: "aspect-select",
+            value: cropAspect,
+            onChange: (e) => setCropAspect(e.target.value),
+            title: "Aspect ratio (Shift while dragging = 1:1)",
+          },
+            h("option", { value: "free" }, "Free"),
+            h("option", { value: "1:1" }, "1:1"),
+            h("option", { value: "4:5" }, "4:5"),
+            h("option", { value: "5:4" }, "5:4"),
+            h("option", { value: "16:9" }, "16:9"),
+            h("option", { value: "9:16" }, "9:16"),
+            h("option", { value: "3:2" }, "3:2"),
+            h("option", { value: "2:3" }, "2:3")
+          ),
+          h("button", {
+            className: "toggle-btn",
+            onClick: cancelCrop,
+            title: "Cancel (Esc)",
+          }, Icon.close, " Cancel"),
+          h("button", {
+            className: "toggle-btn on",
+            onClick: applyCrop,
+            title: "Apply (Enter)",
+          }, Icon.check, " Apply")
         ),
         !hasImage && h("div", { className: "empty" + (drag ? " drag" : "") },
           h("div", { className: "glyph" }, Icon.image),
