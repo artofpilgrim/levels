@@ -1,0 +1,1337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Levels — texture alpha studio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg: oklch(0.16 0.006 80);
+    --panel: oklch(0.20 0.006 80);
+    --panel-2: oklch(0.235 0.006 80);
+    --line: oklch(0.30 0.006 80);
+    --line-soft: oklch(0.26 0.006 80);
+    --fg: oklch(0.96 0.004 80);
+    --fg-2: oklch(0.80 0.005 80);
+    --fg-3: oklch(0.62 0.006 80);
+    --accent: oklch(0.78 0.13 65);
+    --accent-2: oklch(0.85 0.10 65);
+    --danger: oklch(0.72 0.15 30);
+    --radius: 6px;
+    --gap: 14px;
+  }
+  *{ box-sizing: border-box; }
+  html, body { height: 100%; }
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1.4 "Geist", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+  button { font: inherit; color: inherit; }
+
+  /* App shell */
+  .app{
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: 44px 1fr;
+    height: 100vh;
+  }
+  header{
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .brand{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .brand-mark{
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    background:
+      linear-gradient(180deg, transparent 0%, transparent 50%, oklch(0.96 0.004 80) 50%, oklch(0.96 0.004 80) 100%),
+      linear-gradient(90deg, oklch(0.20 0.006 80), oklch(0.20 0.006 80));
+    border: 1px solid var(--line);
+  }
+  .brand-sub{
+    color: var(--fg-3);
+    font-weight: 400;
+    margin-left: 4px;
+    font-size: 12px;
+  }
+  .header-actions{
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .btn{
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 5px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--fg);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    transition: background .12s, border-color .12s, transform .05s;
+  }
+  .btn:hover{ background: oklch(0.27 0.006 80); border-color: oklch(0.38 0.006 80); }
+  .btn:active{ transform: translateY(1px); }
+  .btn[disabled]{ opacity: .4; cursor: not-allowed; }
+  .btn.primary{
+    background: var(--accent);
+    color: oklch(0.16 0.006 80);
+    border-color: transparent;
+    font-weight: 500;
+  }
+  .btn.primary:hover{ background: var(--accent-2); }
+  .btn .kbd{
+    color: var(--fg-3);
+    font-size: 11px;
+    margin-left: 4px;
+    font-family: "Geist Mono", monospace;
+  }
+  .btn.primary .kbd{ color: oklch(0.16 0.006 80 / 0.55); }
+  .icon{ width: 14px; height: 14px; }
+
+  /* Canvas area */
+  .stage{
+    position: relative;
+    background:
+      linear-gradient(45deg, oklch(0.18 0.006 80) 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(-45deg, oklch(0.18 0.006 80) 25%, transparent 25%) -8px 0/16px 16px,
+      linear-gradient(45deg, transparent 75%, oklch(0.18 0.006 80) 75%) 0 8px/16px 16px,
+      linear-gradient(-45deg, transparent 75%, oklch(0.18 0.006 80) 75%) 0 8px/16px 16px,
+      oklch(0.14 0.006 80);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .stage canvas{
+    max-width: calc(100% - 48px);
+    max-height: calc(100% - 48px);
+    box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 0 1px oklch(0.10 0.006 80);
+    image-rendering: pixelated;
+  }
+  .stage canvas.fit-smooth{ image-rendering: auto; }
+
+  .empty{
+    position: absolute;
+    inset: 24px;
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: var(--fg-2);
+    background: oklch(0.16 0.006 80 / 0.7);
+    transition: border-color .15s, background .15s;
+  }
+  .empty.drag{
+    border-color: var(--accent);
+    background: oklch(0.78 0.13 65 / 0.08);
+  }
+  .empty h2{
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .empty p{
+    margin: 0;
+    color: var(--fg-3);
+    font-size: 12.5px;
+  }
+  .empty .glyph{
+    width: 56px; height: 56px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    background: var(--panel);
+    color: var(--fg-2);
+  }
+  .empty .actions{
+    display: flex; gap: 8px; margin-top: 4px;
+  }
+  .empty .hint{
+    position: absolute;
+    bottom: 18px;
+    color: var(--fg-3);
+    font-size: 11.5px;
+  }
+
+  .stage-overlay{
+    position: absolute;
+    top: 12px; left: 12px;
+    display: flex; gap: 6px;
+    pointer-events: none;
+  }
+  .chip{
+    background: oklch(0.16 0.006 80 / 0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid oklch(0.40 0.006 80 / 0.4);
+    color: var(--fg-2);
+    font-size: 11.5px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    pointer-events: auto;
+    font-family: "Geist Mono", monospace;
+  }
+  .stage-controls{
+    position: absolute;
+    bottom: 12px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 4px;
+    background: oklch(0.16 0.006 80 / 0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid oklch(0.40 0.006 80 / 0.4);
+    padding: 4px;
+    border-radius: 7px;
+  }
+  .toggle-btn{
+    height: 26px;
+    padding: 0 10px;
+    background: transparent;
+    border: 0;
+    color: var(--fg-2);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .toggle-btn:hover{ background: oklch(0.30 0.006 80 / 0.5); color: var(--fg); }
+  .toggle-btn.on{ background: oklch(0.30 0.006 80); color: var(--fg); }
+  .toggle-btn.held{ background: var(--accent); color: oklch(0.16 0.006 80); }
+
+  /* Sidebar */
+  aside{
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex; flex-direction: column;
+  }
+  aside::-webkit-scrollbar{ width: 8px; }
+  aside::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 4px; }
+
+  section.panel{
+    border-bottom: 1px solid var(--line);
+  }
+  .panel-head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 10px;
+  }
+  .panel-head .title{
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-2);
+    font-weight: 500;
+  }
+  .panel-head .meta{
+    color: var(--fg-3);
+    font-size: 11px;
+  }
+  .panel-body{
+    padding: 4px 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .reset-link{
+    background: none;
+    border: 0;
+    color: var(--fg-3);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+  .reset-link:hover{ color: var(--fg); background: var(--panel-2); }
+
+  /* Sliders */
+  .row{
+    display: grid;
+    grid-template-columns: 64px 1fr 78px;
+    align-items: center;
+    gap: 10px;
+  }
+  .row .label{
+    color: var(--fg-2);
+    font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .row .label .swatch{
+    width: 9px; height: 9px; border-radius: 2px;
+    border: 1px solid oklch(0 0 0 / 0.3);
+  }
+  .row input[type=number]{
+    height: 24px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--fg);
+    border-radius: 4px;
+    text-align: right;
+    padding: 0 6px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11.5px;
+    width: 100%;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .row input[type=number]:focus{ outline: 1px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .row input[type=number]::-webkit-outer-spin-button,
+  .row input[type=number]::-webkit-inner-spin-button{ -webkit-appearance: none; margin: 0; display: none; }
+
+  .slider-track{
+    position: relative;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .slider-track .rail{
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--rail-from, oklch(0.30 0.006 80)) 0%, var(--rail-to, oklch(0.55 0.006 80)) 100%);
+    position: relative;
+  }
+  .slider-track .rail.signed::before{
+    content:"";
+    position: absolute;
+    left: 50%; top: -3px; bottom: -3px;
+    width: 1px;
+    background: oklch(0.45 0.006 80);
+  }
+  .slider-track .thumb{
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--fg);
+    border: 2px solid oklch(0.16 0.006 80);
+    box-shadow: 0 0 0 1px oklch(0.40 0.006 80), 0 1px 4px rgba(0,0,0,.4);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  /* Levels histogram + handles */
+  .levels-graph{
+    position: relative;
+    height: 84px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .levels-graph canvas{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .levels-axis{
+    position: relative;
+    height: 26px;
+    background: linear-gradient(90deg, #000 0%, #fff 100%);
+    border-radius: 3px;
+    margin-top: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .levels-axis .handle{
+    position: absolute;
+    bottom: -6px;
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 9px solid var(--c);
+    transform: translateX(-50%);
+    cursor: ew-resize;
+    filter: drop-shadow(0 0 1px rgba(0,0,0,0.6));
+  }
+  .levels-axis .handle.shadow{ --c: #111; }
+  .levels-axis .handle.midtone{ --c: #888; }
+  .levels-axis .handle.highlight{ --c: #fff; }
+  .levels-output{
+    position: relative;
+    height: 10px;
+    background: linear-gradient(90deg, #000 0%, #fff 100%);
+    border-radius: 3px;
+    margin-top: 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .levels-output .handle{
+    position: absolute;
+    top: 50%;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--c);
+    border: 1.5px solid oklch(0.20 0.006 80);
+    box-shadow: 0 0 0 1px oklch(0.40 0.006 80);
+    transform: translate(-50%, -50%);
+    cursor: ew-resize;
+  }
+  .levels-output .handle.out-shadow{ --c: #111; }
+  .levels-output .handle.out-highlight{ --c: #fff; }
+
+  .levels-values{
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .levels-values .v{
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    text-align: center;
+    color: var(--fg);
+  }
+  .levels-values .v .lab{
+    color: var(--fg-3);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .levels-values input{
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    width: 100%;
+    text-align: center;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 0;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .levels-values input::-webkit-outer-spin-button,
+  .levels-values input::-webkit-inner-spin-button{ -webkit-appearance: none; margin: 0; display: none; }
+  .levels-values input:focus{ outline: 1px solid var(--accent); border-radius: 2px; }
+
+  .stepper{
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .stepper input{ flex: 1; min-width: 0; }
+  .step-btn{
+    background: transparent;
+    border: 0;
+    padding: 0;
+    width: 14px;
+    height: 16px;
+    border-radius: 3px;
+    color: var(--fg-3);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+    flex: 0 0 auto;
+    transition: opacity .12s, color .12s, background .12s;
+  }
+  .step-btn svg{ display: block; }
+  .levels-values .v:hover .step-btn{ opacity: 1; }
+  .step-btn:hover{ color: var(--fg); background: oklch(0.30 0.006 80); }
+  .step-btn:active{ color: var(--accent); background: oklch(0.34 0.006 80); }
+  .step-btn[disabled]{ opacity: 0.2; cursor: not-allowed; }
+  .step-btn[disabled]:hover{ background: transparent; color: var(--fg-3); }
+  .step-btn:focus-visible{ outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  /* Stepper variant inside a .row: unified bordered control */
+  .row .stepper{
+    height: 24px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    gap: 0;
+    overflow: hidden;
+  }
+  .row .stepper:focus-within{
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+  .row .stepper input[type=number]{
+    height: 100%;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    text-align: right;
+    padding: 0 4px;
+    min-width: 0;
+    width: auto;
+  }
+  .row .stepper input[type=number]:focus{ outline: 0; }
+  .row .step-btn{
+    height: 100%;
+    width: 16px;
+    border-radius: 0;
+    opacity: 0.55;
+  }
+  .row:hover .step-btn,
+  .row .stepper:focus-within .step-btn{ opacity: 1; }
+  .row .step-btn:hover{ background: oklch(0.30 0.006 80); color: var(--fg); }
+  .row .step-btn[disabled]{ opacity: 0.2; cursor: not-allowed; }
+
+  .sublabel{
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-3);
+    margin-top: 4px;
+  }
+
+  /* Preset row */
+  .presets{
+    display: flex; gap: 4px; flex-wrap: wrap;
+  }
+  .preset{
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--fg-2);
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .preset:hover{ color: var(--fg); border-color: oklch(0.40 0.006 80); }
+  .preset.active{ background: oklch(0.78 0.13 65 / 0.18); color: var(--accent-2); border-color: oklch(0.78 0.13 65 / 0.5); }
+
+  /* Toggles & misc */
+  .switch{
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    font-size: 12px; color: var(--fg-2);
+  }
+  .switch input{ display: none; }
+  .switch .track{
+    width: 26px; height: 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    position: relative;
+    transition: background .15s;
+  }
+  .switch .track::after{
+    content: "";
+    position: absolute;
+    width: 10px; height: 10px;
+    background: var(--fg-2);
+    border-radius: 50%;
+    top: 1px; left: 1px;
+    transition: left .15s, background .15s;
+  }
+  .switch input:checked + .track{ background: var(--accent); border-color: transparent; }
+  .switch input:checked + .track::after{ left: 14px; background: oklch(0.16 0.006 80); }
+
+  .toast{
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: oklch(0.96 0.004 80);
+    color: oklch(0.16 0.006 80);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    opacity: 0;
+    transition: transform .2s, opacity .2s;
+    pointer-events: none;
+    z-index: 50;
+  }
+  .toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error{ background: var(--danger); color: oklch(0.16 0.006 80); }
+
+  .file-input{ display: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+
+<script>
+(function () {
+  const { useState, useEffect, useRef, useCallback, useMemo } = React;
+  const h = React.createElement;
+
+  /* Image processing ────────────────────────────────────────── */
+
+  function bwGrayLookup(r, g, b, w) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const sub = max - min;
+    if (sub === 0) return max;
+
+    let weight;
+    if (r === max) {
+      if (b <= g) {
+        const t = (g - min) / sub;
+        weight = w.r + (w.y - w.r) * t;
+      } else {
+        const t = (b - min) / sub;
+        weight = w.r + (w.m - w.r) * t;
+      }
+    } else if (g === max) {
+      if (r >= b) {
+        const t = (max - r) / sub;
+        weight = w.y + (w.g - w.y) * t;
+      } else {
+        const t = (b - min) / sub;
+        weight = w.g + (w.c - w.g) * t;
+      }
+    } else {
+      if (g >= r) {
+        const t = (max - g) / sub;
+        weight = w.c + (w.b - w.c) * t;
+      } else {
+        const t = (r - min) / sub;
+        weight = w.b + (w.m - w.b) * t;
+      }
+    }
+    return max - sub * (1 - weight);
+  }
+
+  function buildLevelsLUT(black, white, gamma, oBlack, oWhite, invert) {
+    const lut = new Uint8ClampedArray(256);
+    const denom = Math.max(1, white - black);
+    const invGamma = 1 / Math.max(0.01, gamma);
+    for (let i = 0; i < 256; i++) {
+      let v = (i - black) / denom;
+      v = Math.max(0, Math.min(1, v));
+      v = Math.pow(v, invGamma);
+      v = oBlack + v * (oWhite - oBlack);
+      if (invert) v = 255 - v;
+      lut[i] = Math.round(v);
+    }
+    return lut;
+  }
+
+  function processImage(srcImageData, settings) {
+    const { width, height, data: src } = srcImageData;
+    const out = new ImageData(width, height);
+    const dst = out.data;
+
+    const w = {
+      r: settings.bw.r / 100,
+      y: settings.bw.y / 100,
+      g: settings.bw.g / 100,
+      c: settings.bw.c / 100,
+      b: settings.bw.b / 100,
+      m: settings.bw.m / 100,
+    };
+    const lut = buildLevelsLUT(
+      settings.levels.inBlack,
+      settings.levels.inWhite,
+      settings.levels.gamma,
+      settings.levels.outBlack,
+      settings.levels.outWhite,
+      settings.invert
+    );
+
+    for (let i = 0; i < src.length; i += 4) {
+      let gray;
+      if (settings.bwOn) {
+        gray = bwGrayLookup(src[i], src[i + 1], src[i + 2], w);
+      } else {
+        gray = 0.2126 * src[i] + 0.7152 * src[i + 1] + 0.0722 * src[i + 2];
+      }
+      const v = lut[Math.max(0, Math.min(255, Math.round(gray)))];
+      dst[i] = v;
+      dst[i + 1] = v;
+      dst[i + 2] = v;
+      dst[i + 3] = src[i + 3];
+    }
+    return out;
+  }
+
+  /* Defaults & presets ──────────────────────────────────────── */
+
+  const DEFAULT_BW = { r: 40, y: 60, g: 40, c: 60, b: 20, m: 80 };
+  const DEFAULT_LEVELS = { inBlack: 0, inWhite: 255, gamma: 1.0, outBlack: 0, outWhite: 255 };
+  const DEFAULT_SETTINGS = {
+    bw: Object.assign({}, DEFAULT_BW),
+    levels: Object.assign({}, DEFAULT_LEVELS),
+    bwOn: true,
+    invert: false,
+  };
+
+  const BW_PRESETS = {
+    "Default":        { r: 40,  y: 60,  g: 40,  c: 60,  b: 20,  m: 80  },
+    "High contrast":  { r: 80,  y: 80,  g: 80,  c: 20,  b: 20,  m: 80  },
+    "Dark sky":       { r: 40,  y: 60,  g: 40,  c: 60,  b: -50, m: 80  },
+    "Infrared":       { r: -50, y: 250, g: 200, c: 60,  b: 0,   m: 50  },
+    "Red filter":     { r: 120, y: 110, g: 40,  c: 20,  b: 20,  m: 90  },
+    "Stark grunge":   { r: 70,  y: 30,  g: 30,  c: 70,  b: 100, m: 30  },
+  };
+
+  /* Helpers ─────────────────────────────────────────────────── */
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function Slider(props) {
+    const { value, onChange, min = 0, max = 100, step = 1, gradientFrom, gradientTo, signed = false, defaultValue } = props;
+    const trackRef = useRef(null);
+    const updateFromEvent = (e) => {
+      const r = trackRef.current.getBoundingClientRect();
+      const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+      let t = clamp(x / r.width, 0, 1);
+      let v = min + t * (max - min);
+      v = Math.round(v / step) * step;
+      onChange(v);
+    };
+    const onPointerDown = (e) => {
+      e.preventDefault();
+      updateFromEvent(e);
+      const move = (ev) => updateFromEvent(ev);
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+    const onDouble = () => { if (defaultValue !== undefined) onChange(defaultValue); };
+    const pct = ((value - min) / (max - min)) * 100;
+    return h("div", {
+      className: "slider-track",
+      ref: trackRef,
+      onPointerDown,
+      onDoubleClick: onDouble,
+      style: { "--rail-from": gradientFrom, "--rail-to": gradientTo },
+    },
+      h("div", { className: "rail" + (signed ? " signed" : "") }),
+      h("div", { className: "thumb", style: { left: clamp(pct, 0, 100) + "%" } })
+    );
+  }
+
+  function NumberInput(props) {
+    const { value, onChange, min, max, step = 1, stepper = false } = props;
+    const [local, setLocal] = useState(String(value));
+    useEffect(() => { setLocal(String(value)); }, [value]);
+    const commit = () => {
+      let v = parseFloat(local);
+      if (Number.isFinite(v)) {
+        if (min !== undefined) v = Math.max(min, v);
+        if (max !== undefined) v = Math.min(max, v);
+        onChange(v);
+      } else {
+        setLocal(String(value));
+      }
+    };
+    const stepBy = (dir) => {
+      const decimals = (String(step).split(".")[1] || "").length;
+      let base = parseFloat(local);
+      if (!Number.isFinite(base)) base = value;
+      let v = base + dir * step;
+      if (min !== undefined) v = Math.max(min, v);
+      if (max !== undefined) v = Math.min(max, v);
+      if (decimals > 0) v = parseFloat(v.toFixed(decimals));
+      onChange(v);
+    };
+    const inputEl = h("input", {
+      type: "number",
+      value: local,
+      step,
+      onChange: (e) => setLocal(e.target.value),
+      onBlur: commit,
+      onKeyDown: (e) => { if (e.key === "Enter") e.currentTarget.blur(); },
+    });
+    if (!stepper) return inputEl;
+    const chev = (dir) => h("svg", { viewBox: "0 0 10 10", width: 10, height: 10, "aria-hidden": "true" },
+      h("path", {
+        d: dir < 0 ? "M6 2 L3 5 L6 8" : "M4 2 L7 5 L4 8",
+        fill: "none", stroke: "currentColor", strokeWidth: 1.5,
+        strokeLinecap: "round", strokeLinejoin: "round",
+      })
+    );
+    const atMin = min !== undefined && value <= min;
+    const atMax = max !== undefined && value >= max;
+    return h("div", { className: "stepper" },
+      h("button", {
+        type: "button", className: "step-btn", tabIndex: -1,
+        disabled: atMin, "aria-label": "Decrease",
+        onClick: () => stepBy(-1),
+      }, chev(-1)),
+      inputEl,
+      h("button", {
+        type: "button", className: "step-btn", tabIndex: -1,
+        disabled: atMax, "aria-label": "Increase",
+        onClick: () => stepBy(1),
+      }, chev(1))
+    );
+  }
+
+  /* B&W mixer panel ─────────────────────────────────────────── */
+
+  const BW_ROWS = [
+    { key: "r", label: "Reds",     sw: "#e2483b", from: "oklch(0.30 0.13 25)",  to: "oklch(0.70 0.21 25)"  },
+    { key: "y", label: "Yellows",  sw: "#e6c83b", from: "oklch(0.40 0.10 100)", to: "oklch(0.92 0.18 100)" },
+    { key: "g", label: "Greens",   sw: "#46c451", from: "oklch(0.30 0.10 145)", to: "oklch(0.78 0.22 145)" },
+    { key: "c", label: "Cyans",    sw: "#34c5d6", from: "oklch(0.30 0.06 215)", to: "oklch(0.85 0.13 215)" },
+    { key: "b", label: "Blues",    sw: "#3b6de2", from: "oklch(0.20 0.10 265)", to: "oklch(0.55 0.22 265)" },
+    { key: "m", label: "Magentas", sw: "#d646b8", from: "oklch(0.30 0.13 330)", to: "oklch(0.70 0.25 330)" },
+  ];
+
+  function BWMixer(props) {
+    const { bw, bwOn, onChange, onToggle, onReset, preset, onPreset } = props;
+    return h("section", { className: "panel" },
+      h("div", { className: "panel-head" },
+        h("span", { className: "title" }, "Channel mixer"),
+        h("span", { style: { display: "flex", gap: 8, alignItems: "center" } },
+          h("label", { className: "switch" },
+            h("input", { type: "checkbox", checked: bwOn, onChange: (e) => onToggle(e.target.checked) }),
+            h("span", { className: "track" })
+          ),
+          h("button", { className: "reset-link", onClick: onReset }, "Reset")
+        )
+      ),
+      h("div", { className: "panel-body", style: { opacity: bwOn ? 1 : 0.5, pointerEvents: bwOn ? "auto" : "none" } },
+        h("div", { className: "presets" },
+          Object.keys(BW_PRESETS).map((name) =>
+            h("button", {
+              key: name,
+              className: "preset" + (preset === name ? " active" : ""),
+              onClick: () => onPreset(name),
+            }, name)
+          )
+        ),
+        BW_ROWS.map((row) =>
+          h("div", { className: "row", key: row.key },
+            h("span", { className: "label" },
+              h("span", { className: "swatch", style: { background: row.sw } }),
+              row.label
+            ),
+            h(Slider, {
+              value: bw[row.key],
+              onChange: (v) => onChange(Object.assign({}, bw, { [row.key]: v })),
+              min: -200, max: 300, step: 1, signed: true,
+              gradientFrom: row.from, gradientTo: row.to,
+              defaultValue: DEFAULT_BW[row.key],
+            }),
+            h(NumberInput, {
+              value: bw[row.key],
+              min: -200, max: 300,
+              stepper: true,
+              onChange: (v) => onChange(Object.assign({}, bw, { [row.key]: v })),
+            })
+          )
+        )
+      )
+    );
+  }
+
+  /* Levels panel ────────────────────────────────────────────── */
+
+  function LevelsPanel(props) {
+    const { levels, onChange, onReset, histogram } = props;
+    const histCanvasRef = useRef(null);
+    const inputRailRef = useRef(null);
+    const outputRailRef = useRef(null);
+
+    useEffect(() => {
+      const c = histCanvasRef.current;
+      if (!c || !histogram) return;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = c.getBoundingClientRect();
+      c.width = rect.width * dpr;
+      c.height = rect.height * dpr;
+      const ctx = c.getContext("2d");
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      const max = Math.max.apply(null, histogram);
+      if (max === 0) return;
+      const bin = rect.width / 256;
+      ctx.fillStyle = "oklch(0.55 0.006 80)";
+      for (let i = 0; i < 256; i++) {
+        const hh = Math.pow(histogram[i] / max, 0.5) * rect.height;
+        ctx.fillRect(i * bin, rect.height - hh, bin + 0.5, hh);
+      }
+      ctx.fillStyle = "oklch(0.16 0.006 80 / 0.55)";
+      ctx.fillRect(0, 0, (levels.inBlack / 255) * rect.width, rect.height);
+      ctx.fillRect((levels.inWhite / 255) * rect.width, 0, rect.width, rect.height);
+    }, [histogram, levels.inBlack, levels.inWhite]);
+
+    const dragHandle = (railRef, setter, min, max) => (e) => {
+      e.preventDefault();
+      const rail = railRef.current;
+      const update = (ev) => {
+        const r = rail.getBoundingClientRect();
+        const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+        let v = clamp(Math.round((x / r.width) * 255), min, max);
+        setter(v);
+      };
+      update(e);
+      const move = (ev) => update(ev);
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+
+    const gammaPos = useMemo(() => {
+      const t = (Math.log(levels.gamma) - Math.log(0.01)) / (Math.log(9.99) - Math.log(0.01));
+      const f = 1 - t;
+      return levels.inBlack + (levels.inWhite - levels.inBlack) * f;
+    }, [levels.gamma, levels.inBlack, levels.inWhite]);
+
+    const setBlack = (v) => {
+      const nb = Math.min(v, levels.inWhite - 1);
+      onChange(Object.assign({}, levels, { inBlack: nb }));
+    };
+    const setWhite = (v) => {
+      const nw = Math.max(v, levels.inBlack + 1);
+      onChange(Object.assign({}, levels, { inWhite: nw }));
+    };
+    const setGammaFromPos = (pos) => {
+      const span = Math.max(1, levels.inWhite - levels.inBlack);
+      let f = (pos - levels.inBlack) / span;
+      f = clamp(f, 0.001, 0.999);
+      const t = 1 - f;
+      const logG = Math.log(0.01) + t * (Math.log(9.99) - Math.log(0.01));
+      const g = Math.exp(logG);
+      onChange(Object.assign({}, levels, { gamma: Math.round(g * 100) / 100 }));
+    };
+
+    return h("section", { className: "panel" },
+      h("div", { className: "panel-head" },
+        h("span", { className: "title" }, "Levels"),
+        h("button", { className: "reset-link", onClick: onReset }, "Reset")
+      ),
+      h("div", { className: "panel-body" },
+        h("div", { className: "sublabel" }, "Input"),
+        h("div", { className: "levels-graph" },
+          h("canvas", { ref: histCanvasRef })
+        ),
+        h("div", {
+          className: "levels-axis",
+          ref: inputRailRef,
+          onPointerDown: (e) => {
+            const r = inputRailRef.current.getBoundingClientRect();
+            const x = e.clientX - r.left;
+            const positions = [
+              { key: "shadow", pos: (levels.inBlack / 255) * r.width },
+              { key: "mid",    pos: (gammaPos / 255) * r.width },
+              { key: "high",   pos: (levels.inWhite / 255) * r.width },
+            ];
+            positions.sort((a, b) => Math.abs(a.pos - x) - Math.abs(b.pos - x));
+            const choice = positions[0].key;
+            if (choice === "shadow")      dragHandle(inputRailRef, setBlack, 0, 254)(e);
+            else if (choice === "high")   dragHandle(inputRailRef, setWhite, 1, 255)(e);
+            else                          dragHandle(inputRailRef, setGammaFromPos, 0, 255)(e);
+          }
+        },
+          h("div", { className: "handle shadow",    style: { left: ((levels.inBlack / 255) * 100) + "%" } }),
+          h("div", { className: "handle midtone",   style: { left: ((gammaPos / 255) * 100) + "%" } }),
+          h("div", { className: "handle highlight", style: { left: ((levels.inWhite / 255) * 100) + "%" } })
+        ),
+
+        h("div", { className: "levels-values" },
+          h("div", { className: "v" },
+            h("span", { className: "lab" }, "Black"),
+            h(NumberInput, { value: levels.inBlack, min: 0, max: 254, stepper: true, onChange: (v) => setBlack(v) })
+          ),
+          h("div", { className: "v" },
+            h("span", { className: "lab" }, "Gamma"),
+            h(NumberInput, { value: levels.gamma, min: 0.01, max: 9.99, step: 0.01, stepper: true,
+              onChange: (v) => onChange(Object.assign({}, levels, { gamma: v })) })
+          ),
+          h("div", { className: "v" },
+            h("span", { className: "lab" }, "White"),
+            h(NumberInput, { value: levels.inWhite, min: 1, max: 255, stepper: true, onChange: (v) => setWhite(v) })
+          )
+        ),
+
+        h("div", { className: "sublabel", style: { marginTop: 10 } }, "Output"),
+        h("div", {
+          className: "levels-output",
+          ref: outputRailRef,
+          onPointerDown: (e) => {
+            const r = outputRailRef.current.getBoundingClientRect();
+            const x = e.clientX - r.left;
+            const sd = Math.abs((levels.outBlack / 255) * r.width - x);
+            const hd = Math.abs((levels.outWhite / 255) * r.width - x);
+            if (sd < hd) {
+              dragHandle(outputRailRef,
+                (v) => onChange(Object.assign({}, levels, { outBlack: Math.min(v, levels.outWhite - 1) })),
+                0, 254)(e);
+            } else {
+              dragHandle(outputRailRef,
+                (v) => onChange(Object.assign({}, levels, { outWhite: Math.max(v, levels.outBlack + 1) })),
+                1, 255)(e);
+            }
+          }
+        },
+          h("div", { className: "handle out-shadow",    style: { left: ((levels.outBlack / 255) * 100) + "%" } }),
+          h("div", { className: "handle out-highlight", style: { left: ((levels.outWhite / 255) * 100) + "%" } })
+        ),
+        h("div", { className: "levels-values", style: { gridTemplateColumns: "1fr 1fr" } },
+          h("div", { className: "v" },
+            h("span", { className: "lab" }, "Out black"),
+            h(NumberInput, { value: levels.outBlack, min: 0, max: 254, stepper: true,
+              onChange: (v) => onChange(Object.assign({}, levels, { outBlack: Math.min(v, levels.outWhite - 1) })) })
+          ),
+          h("div", { className: "v" },
+            h("span", { className: "lab" }, "Out white"),
+            h(NumberInput, { value: levels.outWhite, min: 1, max: 255, stepper: true,
+              onChange: (v) => onChange(Object.assign({}, levels, { outWhite: Math.max(v, levels.outBlack + 1) })) })
+          )
+        )
+      )
+    );
+  }
+
+  /* Inline SVG icons ───────────────────────────────────────── */
+
+  const Icon = {
+    upload: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M12 16V4M6 10l6-6 6 6M4 20h16" })
+    ),
+    download: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M12 4v12M6 10l6 6 6-6M4 20h16" })
+    ),
+    copy: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("rect", { x: "9", y: "9", width: "11", height: "11", rx: "2" }),
+      h("path", { d: "M5 15V6a2 2 0 0 1 2-2h9" })
+    ),
+    reset: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M3 12a9 9 0 1 0 3-6.7" }),
+      h("path", { d: "M3 4v5h5" })
+    ),
+    eye: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("path", { d: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" }),
+      h("circle", { cx: "12", cy: "12", r: "3" })
+    ),
+    invert: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("circle", { cx: "12", cy: "12", r: "9" }),
+      h("path", { d: "M12 3v18", fill: "currentColor" }),
+      h("path", { d: "M12 3a9 9 0 0 1 0 18Z", fill: "currentColor", stroke: "none" })
+    ),
+    image: h("svg", { viewBox: "0 0 24 24", width: "22", height: "22", fill: "none", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("rect", { x: "3", y: "3", width: "18", height: "18", rx: "2" }),
+      h("circle", { cx: "9", cy: "9", r: "1.5" }),
+      h("path", { d: "m3 17 5-5 4 4 3-3 6 6" })
+    ),
+  };
+
+  /* Main app ────────────────────────────────────────────────── */
+
+  function App() {
+    const [image, setImage] = useState(null);
+    const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+    const [preset, setPreset] = useState("Default");
+    const [drag, setDrag] = useState(false);
+    const [showOriginal, setShowOriginal] = useState(false);
+    const [toast, setToast] = useState(null);
+    const fileInputRef = useRef(null);
+    const canvasRef = useRef(null);
+
+    function showToast(msg, kind) {
+      setToast({ msg, kind });
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => setToast(null), 1800);
+    }
+
+    const loadFile = useCallback((file) => {
+      if (!file || !file.type.startsWith("image/")) {
+        showToast("Please drop an image file", "error");
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 2400;
+        let w = img.naturalWidth, hh = img.naturalHeight;
+        if (Math.max(w, hh) > MAX) {
+          const s = MAX / Math.max(w, hh);
+          w = Math.round(w * s); hh = Math.round(hh * s);
+        }
+        const c = document.createElement("canvas");
+        c.width = w; c.height = hh;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, w, hh);
+        const data = ctx.getImageData(0, 0, w, hh);
+        setImage({ name: file.name || "image", width: w, height: hh, srcImageData: data });
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => { showToast("Could not load that image", "error"); URL.revokeObjectURL(url); };
+      img.src = url;
+    }, []);
+
+    useEffect(() => {
+      const onDragOver = (e) => { e.preventDefault(); setDrag(true); };
+      const onDragLeave = (e) => { if (e.target === document.body || e.relatedTarget === null) setDrag(false); };
+      const onDrop = (e) => {
+        e.preventDefault();
+        setDrag(false);
+        const file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) loadFile(file);
+      };
+      const onPaste = (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const it of items) {
+          if (it.type && it.type.startsWith("image/")) {
+            loadFile(it.getAsFile());
+            break;
+          }
+        }
+      };
+      window.addEventListener("dragover", onDragOver);
+      window.addEventListener("dragleave", onDragLeave);
+      window.addEventListener("drop", onDrop);
+      window.addEventListener("paste", onPaste);
+      return () => {
+        window.removeEventListener("dragover", onDragOver);
+        window.removeEventListener("dragleave", onDragLeave);
+        window.removeEventListener("drop", onDrop);
+        window.removeEventListener("paste", onPaste);
+      };
+    }, [loadFile]);
+
+    useEffect(() => {
+      const onKey = (e) => {
+        const target = e.target;
+        const isField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+        if (isField) return;
+        if (e.code === "Space") { e.preventDefault(); setShowOriginal(true); }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && image && !window.getSelection().toString()) {
+          e.preventDefault();
+          copyToClipboard();
+        }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && image) {
+          e.preventDefault();
+          downloadImage();
+        }
+        if (e.key === "i" && image) setSettings((s) => Object.assign({}, s, { invert: !s.invert }));
+      };
+      const onUp = (e) => { if (e.code === "Space") setShowOriginal(false); };
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("keyup", onUp);
+      return () => {
+        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("keyup", onUp);
+      };
+    }, [image, settings]);
+
+    const processedData = useMemo(() => {
+      if (!image) return null;
+      return processImage(image.srcImageData, settings);
+    }, [image, settings]);
+
+    const histogram = useMemo(() => {
+      if (!processedData) return null;
+      const hh = new Array(256).fill(0);
+      const d = processedData.data;
+      for (let i = 0; i < d.length; i += 4) hh[d[i]]++;
+      return hh;
+    }, [processedData]);
+
+    useEffect(() => {
+      if (!image) return;
+      const c = canvasRef.current;
+      if (!c) return;
+      c.width = image.width;
+      c.height = image.height;
+      const ctx = c.getContext("2d");
+      if (showOriginal) {
+        ctx.putImageData(image.srcImageData, 0, 0);
+      } else if (processedData) {
+        ctx.putImageData(processedData, 0, 0);
+      }
+    }, [image, processedData, showOriginal]);
+
+    function getExportBlob() {
+      return new Promise((resolve) => {
+        const c = canvasRef.current;
+        c.toBlob((blob) => resolve(blob), "image/png");
+      });
+    }
+    async function downloadImage() {
+      if (!image) return;
+      const blob = await getExportBlob();
+      const a = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      const base = (image.name || "image").replace(/\.[^.]+$/, "");
+      a.href = url;
+      a.download = base + "_alpha.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      showToast("Downloaded " + a.download);
+    }
+    async function copyToClipboard() {
+      if (!image) return;
+      try {
+        const blob = await getExportBlob();
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        showToast("Copied to clipboard");
+      } catch (err) {
+        showToast("Clipboard not available — try Download instead", "error");
+      }
+    }
+
+    function resetAll() {
+      setSettings(DEFAULT_SETTINGS);
+      setPreset("Default");
+    }
+    function resetBW() {
+      setSettings((s) => Object.assign({}, s, { bw: Object.assign({}, DEFAULT_BW) }));
+      setPreset("Default");
+    }
+    function resetLevels() {
+      setSettings((s) => Object.assign({}, s, { levels: Object.assign({}, DEFAULT_LEVELS) }));
+    }
+    function applyPreset(name) {
+      setPreset(name);
+      setSettings((s) => Object.assign({}, s, { bw: Object.assign({}, BW_PRESETS[name]) }));
+    }
+
+    const hasImage = !!image;
+
+    return h("div", { className: "app" },
+      h("header", null,
+        h("div", { className: "brand" },
+          h("div", { className: "brand-mark" }),
+          h("span", null, "Levels"),
+          h("span", { className: "brand-sub" }, "— texture alpha studio")
+        ),
+        h("div", { className: "header-actions" },
+          h("input", {
+            ref: fileInputRef,
+            className: "file-input",
+            type: "file",
+            accept: "image/*",
+            onChange: (e) => e.target.files && e.target.files[0] && loadFile(e.target.files[0]),
+          }),
+          h("button", { className: "btn", onClick: () => fileInputRef.current.click() },
+            Icon.upload, " Open image"
+          ),
+          h("button", { className: "btn", onClick: resetAll, disabled: !hasImage },
+            Icon.reset, " Reset"
+          ),
+          h("button", { className: "btn", onClick: copyToClipboard, disabled: !hasImage },
+            Icon.copy, " Copy ", h("span", { className: "kbd" }, "⌘C")
+          ),
+          h("button", { className: "btn primary", onClick: downloadImage, disabled: !hasImage },
+            Icon.download, " Download ", h("span", { className: "kbd" }, "⌘S")
+          )
+        )
+      ),
+
+      h("div", { className: "stage" },
+        hasImage && h("canvas", { ref: canvasRef, className: image.width < 1000 ? "" : "fit-smooth" }),
+        hasImage && h("div", { className: "stage-overlay" },
+          h("span", { className: "chip" }, image.name),
+          h("span", { className: "chip" }, image.width + " × " + image.height),
+          settings.invert && h("span", { className: "chip", style: { color: "var(--accent)" } }, "inverted")
+        ),
+        hasImage && h("div", { className: "stage-controls" },
+          h("button", {
+            className: "toggle-btn" + (showOriginal ? " held" : ""),
+            onMouseDown: () => setShowOriginal(true),
+            onMouseUp: () => setShowOriginal(false),
+            onMouseLeave: () => setShowOriginal(false),
+            title: "Hold to compare with original",
+          }, Icon.eye, " ", showOriginal ? "Original" : "Hold to compare"),
+          h("button", {
+            className: "toggle-btn" + (settings.invert ? " on" : ""),
+            onClick: () => setSettings((s) => Object.assign({}, s, { invert: !s.invert })),
+            title: "Invert (I)",
+          }, Icon.invert, " Invert")
+        ),
+        !hasImage && h("div", { className: "empty" + (drag ? " drag" : "") },
+          h("div", { className: "glyph" }, Icon.image),
+          h("h2", null, "Drop an image to start"),
+          h("p", null, "Or paste from clipboard, or open a file."),
+          h("div", { className: "actions" },
+            h("button", { className: "btn primary", onClick: () => fileInputRef.current.click() },
+              Icon.upload, " Choose image"
+            )
+          ),
+          h("span", { className: "hint" }, "Photos, screenshots, scans, any RGB image — JPEG · PNG · WebP")
+        )
+      ),
+
+      h("aside", null,
+        h(BWMixer, {
+          bw: settings.bw,
+          bwOn: settings.bwOn,
+          onChange: (bw) => { setSettings((s) => Object.assign({}, s, { bw })); setPreset(""); },
+          onToggle: (v) => setSettings((s) => Object.assign({}, s, { bwOn: v })),
+          onReset: resetBW,
+          preset,
+          onPreset: applyPreset,
+        }),
+        h(LevelsPanel, {
+          levels: settings.levels,
+          onChange: (levels) => setSettings((s) => Object.assign({}, s, { levels })),
+          onReset: resetLevels,
+          histogram,
+        }),
+        h("section", { className: "panel", style: { borderBottom: 0, marginTop: "auto" } },
+          h("div", { className: "panel-body", style: { paddingTop: 14 } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+              h("span", { style: { color: "var(--fg-3)", fontSize: 11.5 } }, "Shortcuts")
+            ),
+            h("div", { className: "mono", style: { fontSize: 11, color: "var(--fg-3)", lineHeight: 1.7 } },
+              h("div", null, h("span", { style: { color: "var(--fg-2)" } }, "Space"), "   hold to compare original"),
+              h("div", null, h("span", { style: { color: "var(--fg-2)" } }, "I"), "      toggle invert"),
+              h("div", null,
+                h("span", { style: { color: "var(--fg-2)" } }, "⌘ C"), "   copy result · ",
+                h("span", { style: { color: "var(--fg-2)" } }, "⌘ S"), " download"
+              ),
+              h("div", null, h("span", { style: { color: "var(--fg-2)" } }, "2×click"), " slider → reset to default")
+            )
+          )
+        )
+      ),
+
+      toast && h("div", { className: "toast show" + (toast.kind === "error" ? " error" : "") }, toast.msg)
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+})();
+</script>
+</body>
+</html>
