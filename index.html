@@ -627,12 +627,16 @@
     return max - sub * (1 - weight);
   }
 
-  function buildLevelsLUT(black, white, gamma, oBlack, oWhite, invert) {
+  function buildLevelsLUT(black, white, gamma, oBlack, oWhite, invert, brightness, contrast) {
     const lut = new Uint8ClampedArray(256);
     const denom = Math.max(1, white - black);
     const invGamma = 1 / Math.max(0.01, gamma);
+    const cFactor = 1 + (contrast || 0) / 100;
+    const bOffset = brightness || 0;
     for (let i = 0; i < 256; i++) {
-      let v = (i - black) / denom;
+      let pre = (i - 128) * cFactor + 128 + bOffset;
+      pre = Math.max(0, Math.min(255, pre));
+      let v = (pre - black) / denom;
       v = Math.max(0, Math.min(1, v));
       v = Math.pow(v, invGamma);
       v = oBlack + v * (oWhite - oBlack);
@@ -661,7 +665,9 @@
       settings.levels.gamma,
       settings.levels.outBlack,
       settings.levels.outWhite,
-      settings.invert
+      settings.invert,
+      settings.bc.brightness,
+      settings.bc.contrast
     );
 
     for (let i = 0; i < src.length; i += 4) {
@@ -683,9 +689,11 @@
   /* Defaults & presets ──────────────────────────────────────── */
 
   const DEFAULT_BW = { r: 40, y: 60, g: 40, c: 60, b: 20, m: 80 };
+  const DEFAULT_BC = { brightness: 0, contrast: 0 };
   const DEFAULT_LEVELS = { inBlack: 0, inWhite: 255, gamma: 1.0, outBlack: 0, outWhite: 255 };
   const DEFAULT_SETTINGS = {
     bw: Object.assign({}, DEFAULT_BW),
+    bc: Object.assign({}, DEFAULT_BC),
     levels: Object.assign({}, DEFAULT_LEVELS),
     bwOn: true,
     invert: false,
@@ -852,6 +860,37 @@
             })
           )
         )
+      )
+    );
+  }
+
+  /* Brightness / Contrast panel ─────────────────────────────── */
+
+  function BCPanel(props) {
+    const { bc, onChange, onReset } = props;
+    const row = (key, label, from, to) =>
+      h("div", { className: "row", key },
+        h("span", { className: "label" }, label),
+        h(Slider, {
+          value: bc[key],
+          onChange: (v) => onChange(Object.assign({}, bc, { [key]: v })),
+          min: -100, max: 100, step: 1, signed: true,
+          gradientFrom: from, gradientTo: to,
+          defaultValue: 0,
+        }),
+        h(NumberInput, {
+          value: bc[key], min: -100, max: 100, stepper: true,
+          onChange: (v) => onChange(Object.assign({}, bc, { [key]: v })),
+        })
+      );
+    return h("section", { className: "panel" },
+      h("div", { className: "panel-head" },
+        h("span", { className: "title" }, "Brightness / Contrast"),
+        h("button", { className: "reset-link", onClick: onReset }, "Reset")
+      ),
+      h("div", { className: "panel-body" },
+        row("brightness", "Brightness", "oklch(0.20 0.006 80)", "oklch(0.92 0.004 80)"),
+        row("contrast",   "Contrast",   "oklch(0.50 0.006 80)", "oklch(0.78 0.13 65)")
       )
     );
   }
@@ -1221,6 +1260,9 @@
     function resetLevels() {
       setSettings((s) => Object.assign({}, s, { levels: Object.assign({}, DEFAULT_LEVELS) }));
     }
+    function resetBC() {
+      setSettings((s) => Object.assign({}, s, { bc: Object.assign({}, DEFAULT_BC) }));
+    }
     function applyPreset(name) {
       setPreset(name);
       setSettings((s) => Object.assign({}, s, { bw: Object.assign({}, BW_PRESETS[name]) }));
@@ -1301,6 +1343,11 @@
           onReset: resetBW,
           preset,
           onPreset: applyPreset,
+        }),
+        h(BCPanel, {
+          bc: settings.bc,
+          onChange: (bc) => setSettings((s) => Object.assign({}, s, { bc })),
+          onReset: resetBC,
         }),
         h(LevelsPanel, {
           levels: settings.levels,
