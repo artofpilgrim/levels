@@ -646,6 +646,35 @@
   .toast.error{ background: var(--danger); color: oklch(0.16 0.006 80); }
 
   .file-input{ display: none; }
+
+  /* Narrow / mobile viewports */
+  @media (max-width: 720px) {
+    body{ overflow: auto; }
+    .app{
+      grid-template-columns: 1fr;
+      grid-template-rows: 44px minmax(50vh, auto) auto;
+      height: auto;
+      min-height: 100vh;
+    }
+    aside{
+      width: auto;
+      border-left: 0;
+      border-top: 1px solid var(--line);
+      overflow-y: visible;
+    }
+    .header-actions .btn .kbd{ display: none; }
+    .header-actions{ gap: 6px; }
+    .header-actions .btn{ padding: 0 9px; }
+    .stage{ min-height: 50vh; }
+    .canvas-wrap canvas{
+      max-height: calc(100vh - 44px - 80px);
+    }
+    .stage-controls{
+      flex-wrap: wrap;
+      max-width: calc(100% - 24px);
+      justify-content: center;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1185,11 +1214,12 @@
     const [cropAspect, setCropAspect] = useState("free");
     const fileInputRef = useRef(null);
     const canvasRef = useRef(null);
+    const toastTimerRef = useRef(null);
 
     function showToast(msg, kind) {
       setToast({ msg, kind });
-      clearTimeout(showToast._t);
-      showToast._t = setTimeout(() => setToast(null), 1800);
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToast(null), 1800);
     }
 
     const loadFile = useCallback((file) => {
@@ -1200,9 +1230,11 @@
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        const MAX = 2400;
-        let w = img.naturalWidth, hh = img.naturalHeight;
-        if (Math.max(w, hh) > MAX) {
+        const MAX = 4096;
+        const origW = img.naturalWidth, origH = img.naturalHeight;
+        let w = origW, hh = origH;
+        const downscaled = Math.max(w, hh) > MAX;
+        if (downscaled) {
           const s = MAX / Math.max(w, hh);
           w = Math.round(w * s); hh = Math.round(hh * s);
         }
@@ -1214,6 +1246,9 @@
         setImage({ name: file.name || "image", width: w, height: hh, srcImageData: data });
         setCrop(null); setDraftCrop(null); setCropMode(false);
         URL.revokeObjectURL(url);
+        if (downscaled) {
+          showToast("Downscaled " + origW + "×" + origH + " → " + w + "×" + hh + " (max " + MAX + "px)");
+        }
       };
       img.onerror = () => { showToast("Could not load that image", "error"); URL.revokeObjectURL(url); };
       img.src = url;
@@ -1322,7 +1357,11 @@
 
     function getExportBlob() {
       return new Promise((resolve) => {
-        const c = canvasRef.current;
+        if (!processedData) { resolve(null); return; }
+        const c = document.createElement("canvas");
+        c.width = processedData.width;
+        c.height = processedData.height;
+        c.getContext("2d").putImageData(processedData, 0, 0);
         c.toBlob((blob) => resolve(blob), "image/png");
       });
     }
@@ -1386,7 +1425,8 @@
         let dx = cx - startX, dy = cy - startY;
         let aspect = cropAspect;
         if (ev.shiftKey) aspect = "1:1";
-        if (aspect !== "free") {
+        const locked = aspect !== "free";
+        if (locked) {
           const [aw, ah] = aspect.split(":").map(Number);
           const ratio = aw / ah;
           const adx = Math.abs(dx), ady = Math.abs(dy);
@@ -1396,15 +1436,28 @@
           } else {
             dx = (dx >= 0 ? 1 : -1) * ady * ratio;
           }
+          const maxAbsDx = dx >= 0 ? srcW - startX : startX;
+          const maxAbsDy = dy >= 0 ? srcH - startY : startY;
+          const adx2 = Math.abs(dx), ady2 = Math.abs(dy);
+          if (adx2 > maxAbsDx || ady2 > maxAbsDy) {
+            const scale = Math.min(
+              adx2 > 0 ? maxAbsDx / adx2 : 1,
+              ady2 > 0 ? maxAbsDy / ady2 : 1
+            );
+            dx *= scale;
+            dy *= scale;
+          }
         }
         let x = Math.min(startX, startX + dx);
         let y = Math.min(startY, startY + dy);
         let w = Math.abs(dx);
         let hh = Math.abs(dy);
-        if (x < 0) { w += x; x = 0; }
-        if (y < 0) { hh += y; y = 0; }
-        if (x + w > srcW) w = srcW - x;
-        if (y + hh > srcH) hh = srcH - y;
+        if (!locked) {
+          if (x < 0) { w += x; x = 0; }
+          if (y < 0) { hh += y; y = 0; }
+          if (x + w > srcW) w = srcW - x;
+          if (y + hh > srcH) hh = srcH - y;
+        }
         setDraftCrop({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(hh) });
       };
       update(e);
