@@ -273,8 +273,8 @@
         showToast("Quad is too small / collapsed", "error");
         return;
       }
-      const sz = quadOutSize(draftQuad);
       const base = workingSrc;
+      const sz = quadOutSize(draftQuad, base.width, base.height);
       const cropAtApply = crop;
       const job = sessionRef.current;
       setProcessing(true);

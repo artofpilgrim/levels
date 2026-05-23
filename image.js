@@ -153,13 +153,70 @@
     return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
   }
 
-  function quadOutSize(quad) {
+  // Whangbo aspect-ratio recovery for a perspective-projected rectangle.
+  // Assumes square pixels, zero skew, principal point at image center.
+  // Returns width/height of the world rectangle, or null if non-recoverable
+  // (parallel edges / no perspective / degenerate).
+  function recoverAspectRatio(quad, imgW, imgH) {
+    if (!imgW || !imgH) return null;
+    const u0 = imgW / 2, v0 = imgH / 2;
+    const m1 = { x: quad[0].x - u0, y: quad[0].y - v0, z: 1 };
+    const m2 = { x: quad[1].x - u0, y: quad[1].y - v0, z: 1 };
+    const m3 = { x: quad[2].x - u0, y: quad[2].y - v0, z: 1 };
+    const m4 = { x: quad[3].x - u0, y: quad[3].y - v0, z: 1 };
+    const cross = (a, b) => ({
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x,
+    });
+    const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+    const c14 = cross(m1, m4);
+    const den2 = dot(cross(m2, m4), m3);
+    const den3 = dot(cross(m3, m4), m2);
+    if (Math.abs(den2) < 1e-9 || Math.abs(den3) < 1e-9) return null;
+    const k2 = dot(c14, m3) / den2;
+    const k3 = dot(c14, m2) / den3;
+    const n2 = { x: k2 * m2.x - m1.x, y: k2 * m2.y - m1.y, z: k2 * m2.z - m1.z };
+    const n3 = { x: k3 * m3.x - m1.x, y: k3 * m3.y - m1.y, z: k3 * m3.z - m1.z };
+    const denomF = n2.x * n3.x + n2.y * n3.y;
+    if (Math.abs(denomF) < 1e-9) return null;
+    const f2 = -(n2.z * n3.z) / denomF;
+    if (f2 <= 0 || !isFinite(f2)) return null;
+    const ar2 =
+      (n2.z * n2.z + (n2.x * n2.x + n2.y * n2.y) / f2) /
+      (n3.z * n3.z + (n3.x * n3.x + n3.y * n3.y) / f2);
+    if (ar2 <= 0 || !isFinite(ar2)) return null;
+    return Math.sqrt(ar2);
+  }
+
+  function quadOutSize(quad, imgW, imgH) {
     const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const topW = d(quad[0], quad[1]);
     const bottomW = d(quad[3], quad[2]);
     const leftH = d(quad[0], quad[3]);
     const rightH = d(quad[1], quad[2]);
-    return { w: Math.max(8, Math.round(Math.max(topW, bottomW))), h: Math.max(8, Math.round(Math.max(leftH, rightH))) };
+    const maxW = Math.max(topW, bottomW);
+    const maxH = Math.max(leftH, rightH);
+    const ar = recoverAspectRatio(quad, imgW, imgH);
+    let w, h;
+    if (ar && ar > 0 && isFinite(ar)) {
+      // Use the larger of the two derived sizes so detail isn't lost
+      // on whichever pair of edges is the constraining one.
+      if (maxW / Math.max(maxH, 1e-9) > ar) {
+        w = maxW;
+        h = maxW / ar;
+      } else {
+        h = maxH;
+        w = maxH * ar;
+      }
+    } else {
+      w = maxW;
+      h = maxH;
+    }
+    return {
+      w: Math.max(8, Math.round(w)),
+      h: Math.max(8, Math.round(h)),
+    };
   }
 
   function isQuadConvex(quad) {
