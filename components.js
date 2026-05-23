@@ -76,17 +76,38 @@
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     };
     const onDouble = () => { if (defaultValue !== undefined) onChange(defaultValue); };
+    const onKeyDown = (e) => {
+      let next = value;
+      const big = e.shiftKey ? 10 : 1;
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = value - step * big;
+      else if (e.key === "ArrowRight" || e.key === "ArrowUp") next = value + step * big;
+      else if (e.key === "Home") next = min;
+      else if (e.key === "End") next = max;
+      else return;
+      e.preventDefault();
+      next = clamp(next, min, max);
+      next = Math.round(next / step) * step;
+      onChange(next);
+    };
     const pct = ((value - min) / (max - min)) * 100;
     return h("div", {
       className: "slider-track",
       ref: trackRef,
+      tabIndex: 0,
+      role: "slider",
+      "aria-valuemin": min,
+      "aria-valuemax": max,
+      "aria-valuenow": value,
       onPointerDown,
       onDoubleClick: onDouble,
+      onKeyDown,
       style: { "--rail-from": gradientFrom, "--rail-to": gradientTo },
     },
       h("div", { className: "rail" + (signed ? " signed" : "") }),
@@ -293,9 +314,11 @@
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     };
 
     const gammaPos = useMemo(() => {
@@ -320,6 +343,32 @@
       const logG = Math.log(0.01) + t * (Math.log(9.99) - Math.log(0.01));
       const g = Math.exp(logG);
       onChange(Object.assign({}, levels, { gamma: Math.round(g * 100) / 100 }));
+    };
+    const setOutBlack = (v) => onChange(Object.assign({}, levels, { outBlack: Math.min(v, levels.outWhite - 1) }));
+    const setOutWhite = (v) => onChange(Object.assign({}, levels, { outWhite: Math.max(v, levels.outBlack + 1) }));
+
+    const arrowKey = (current, lo, hi, apply) => (e) => {
+      const big = e.shiftKey ? 10 : 1;
+      let next = current;
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = current - big;
+      else if (e.key === "ArrowRight" || e.key === "ArrowUp") next = current + big;
+      else if (e.key === "Home") next = lo;
+      else if (e.key === "End") next = hi;
+      else return;
+      e.preventDefault();
+      apply(clamp(next, lo, hi));
+    };
+    const gammaArrowKey = (e) => {
+      const big = e.shiftKey ? 0.10 : 0.01;
+      let next = levels.gamma;
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = levels.gamma - big;
+      else if (e.key === "ArrowRight" || e.key === "ArrowUp") next = levels.gamma + big;
+      else if (e.key === "Home") next = 0.01;
+      else if (e.key === "End") next = 9.99;
+      else return;
+      e.preventDefault();
+      next = clamp(next, 0.01, 9.99);
+      onChange(Object.assign({}, levels, { gamma: Math.round(next * 100) / 100 }));
     };
 
     return h("section", { className: "panel" },
@@ -350,9 +399,30 @@
             else                          dragHandle(inputRailRef, setGammaFromPos, 0, 255)(e);
           }
         },
-          h("div", { className: "handle shadow",    style: { left: ((levels.inBlack / 255) * 100) + "%" } }),
-          h("div", { className: "handle midtone",   style: { left: ((gammaPos / 255) * 100) + "%" } }),
-          h("div", { className: "handle highlight", style: { left: ((levels.inWhite / 255) * 100) + "%" } })
+          h("div", {
+            className: "handle shadow",
+            style: { left: ((levels.inBlack / 255) * 100) + "%" },
+            tabIndex: 0, role: "slider",
+            "aria-label": "Input black point",
+            "aria-valuemin": 0, "aria-valuemax": 254, "aria-valuenow": levels.inBlack,
+            onKeyDown: arrowKey(levels.inBlack, 0, 254, setBlack),
+          }),
+          h("div", {
+            className: "handle midtone",
+            style: { left: ((gammaPos / 255) * 100) + "%" },
+            tabIndex: 0, role: "slider",
+            "aria-label": "Gamma (midtone)",
+            "aria-valuemin": 0.01, "aria-valuemax": 9.99, "aria-valuenow": levels.gamma,
+            onKeyDown: gammaArrowKey,
+          }),
+          h("div", {
+            className: "handle highlight",
+            style: { left: ((levels.inWhite / 255) * 100) + "%" },
+            tabIndex: 0, role: "slider",
+            "aria-label": "Input white point",
+            "aria-valuemin": 1, "aria-valuemax": 255, "aria-valuenow": levels.inWhite,
+            onKeyDown: arrowKey(levels.inWhite, 1, 255, setWhite),
+          })
         ),
 
         h("div", { className: "levels-values" },
@@ -391,8 +461,22 @@
             }
           }
         },
-          h("div", { className: "handle out-shadow",    style: { left: ((levels.outBlack / 255) * 100) + "%" } }),
-          h("div", { className: "handle out-highlight", style: { left: ((levels.outWhite / 255) * 100) + "%" } })
+          h("div", {
+            className: "handle out-shadow",
+            style: { left: ((levels.outBlack / 255) * 100) + "%" },
+            tabIndex: 0, role: "slider",
+            "aria-label": "Output black point",
+            "aria-valuemin": 0, "aria-valuemax": 254, "aria-valuenow": levels.outBlack,
+            onKeyDown: arrowKey(levels.outBlack, 0, 254, setOutBlack),
+          }),
+          h("div", {
+            className: "handle out-highlight",
+            style: { left: ((levels.outWhite / 255) * 100) + "%" },
+            tabIndex: 0, role: "slider",
+            "aria-label": "Output white point",
+            "aria-valuemin": 1, "aria-valuemax": 255, "aria-valuenow": levels.outWhite,
+            onKeyDown: arrowKey(levels.outWhite, 1, 255, setOutWhite),
+          })
         ),
         h("div", { className: "levels-values", style: { gridTemplateColumns: "1fr 1fr" } },
           h("div", { className: "v" },

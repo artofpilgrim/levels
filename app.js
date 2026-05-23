@@ -1,6 +1,6 @@
 (function () {
   const Levels = window.Levels;
-  const { useState, useEffect, useRef, useCallback, useMemo } = React;
+  const { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } = React;
   const h = React.createElement;
   const {
     clamp,
@@ -9,6 +9,7 @@
     quadOutSize,
     isQuadConvex,
     quadArea,
+    quadMinEdge,
     DEFAULT_BW,
     DEFAULT_BC,
     DEFAULT_LEVELS,
@@ -34,10 +35,12 @@
     const [perspectiveMode, setPerspectiveMode] = useState(false);
     const [draftQuad, setDraftQuad] = useState(null);
     const [perspectiveResult, setPerspectiveResult] = useState(null);
+    const [cropBeforePerspective, setCropBeforePerspective] = useState(null);
     const [processing, setProcessing] = useState(false);
     const fileInputRef = useRef(null);
     const canvasRef = useRef(null);
     const toastTimerRef = useRef(null);
+    const sessionRef = useRef(0);
 
     function showToast(msg, kind) {
       setToast({ msg, kind });
@@ -50,9 +53,12 @@
         showToast("Please drop an image file", "error");
         return;
       }
+      sessionRef.current++;
+      const job = sessionRef.current;
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
+        if (job !== sessionRef.current) { URL.revokeObjectURL(url); return; }
         const MAX = 4096;
         const origW = img.naturalWidth, origH = img.naturalHeight;
         let w = origW, hh = origH;
@@ -69,12 +75,17 @@
         setImage({ name: file.name || "image", width: w, height: hh, srcImageData: data });
         setCrop(null); setDraftCrop(null); setCropMode(false);
         setPerspectiveResult(null); setDraftQuad(null); setPerspectiveMode(false);
+        setCropBeforePerspective(null);
         URL.revokeObjectURL(url);
         if (downscaled) {
           showToast("Downscaled " + origW + "×" + origH + " → " + w + "×" + hh + " (max " + MAX + "px)");
         }
       };
-      img.onerror = () => { showToast("Could not load that image", "error"); URL.revokeObjectURL(url); };
+      img.onerror = () => {
+        if (job !== sessionRef.current) { URL.revokeObjectURL(url); return; }
+        showToast("Could not load that image", "error");
+        URL.revokeObjectURL(url);
+      };
       img.src = url;
     }, []);
 
@@ -157,16 +168,18 @@
       return out;
     }, [image, crop, cropMode, perspectiveResult]);
 
+    const deferredSettings = useDeferredValue(settings);
+
     const processedData = useMemo(() => {
       if (!workingSrc) return null;
-      return processImage(workingSrc, settings);
-    }, [workingSrc, settings]);
+      return processImage(workingSrc, deferredSettings);
+    }, [workingSrc, deferredSettings]);
 
     const histogram = useMemo(() => {
       if (!processedData) return null;
       const hh = new Array(256).fill(0);
       const d = processedData.data;
-      if (settings.colorMode) {
+      if (deferredSettings.colorMode) {
         for (let i = 0; i < d.length; i += 4) {
           const v = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) | 0;
           hh[v < 0 ? 0 : v > 255 ? 255 : v]++;
@@ -175,7 +188,7 @@
         for (let i = 0; i < d.length; i += 4) hh[d[i]]++;
       }
       return hh;
-    }, [processedData, settings.colorMode]);
+    }, [processedData, deferredSettings.colorMode]);
 
     useEffect(() => {
       if (!workingSrc) return;
@@ -204,6 +217,7 @@
     async function downloadImage() {
       if (!image) return;
       const blob = await getExportBlob();
+      if (!blob) { showToast("Could not encode PNG — image may be too large", "error"); return; }
       const a = document.createElement("a");
       const url = URL.createObjectURL(blob);
       const base = (image.name || "image").replace(/\.[^.]+$/, "");
@@ -219,6 +233,7 @@
       if (!image) return;
       try {
         const blob = await getExportBlob();
+        if (!blob) throw new Error("Could not encode PNG");
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
         showToast("Copied to clipboard");
       } catch (err) {
@@ -250,21 +265,29 @@
         showToast("Quad must be convex (no crossed edges)", "error");
         return;
       }
-      const minArea = Math.max(64, workingSrc.width * workingSrc.height * 0.005);
-      if (quadArea(draftQuad) < minArea) {
+      if (quadMinEdge(draftQuad) < 8) {
+        showToast("Quad edges must be at least 8px", "error");
+        return;
+      }
+      if (quadArea(draftQuad) < 64) {
         showToast("Quad is too small / collapsed", "error");
         return;
       }
       const sz = quadOutSize(draftQuad);
       const base = workingSrc;
+      const cropAtApply = crop;
+      const job = sessionRef.current;
       setProcessing(true);
       setTimeout(() => {
+        if (job !== sessionRef.current) { setProcessing(false); return; }
         const warped = warpPerspective(base, draftQuad, sz.w, sz.h);
+        if (job !== sessionRef.current) { setProcessing(false); return; }
         setProcessing(false);
         if (!warped) {
           showToast("Could not warp — quad is degenerate", "error");
           return;
         }
+        setCropBeforePerspective(cropAtApply);
         setPerspectiveResult(warped);
         setCrop(null);
         setPerspectiveMode(false);
@@ -274,6 +297,8 @@
     }
     function clearPerspective() {
       setPerspectiveResult(null);
+      setCrop(cropBeforePerspective);
+      setCropBeforePerspective(null);
       setDraftQuad(null);
       setPerspectiveMode(false);
     }
@@ -298,9 +323,11 @@
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     }
 
     function enterCropMode() {
@@ -378,9 +405,11 @@
       const up = () => {
         window.removeEventListener("pointermove", update);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
       };
       window.addEventListener("pointermove", update);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     }
 
     function resetAll() {
@@ -417,7 +446,11 @@
             className: "file-input",
             type: "file",
             accept: "image/*",
-            onChange: (e) => e.target.files && e.target.files[0] && loadFile(e.target.files[0]),
+            onChange: (e) => {
+              const f = e.target.files && e.target.files[0];
+              if (f) loadFile(f);
+              e.target.value = "";
+            },
           }),
           h("button", { className: "btn", onClick: () => fileInputRef.current.click() },
             Icon.upload, " Open image"

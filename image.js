@@ -187,6 +187,16 @@
     return Math.abs(s) / 2;
   }
 
+  function quadMinEdge(quad) {
+    let min = Infinity;
+    for (let i = 0; i < 4; i++) {
+      const a = quad[i], b = quad[(i + 1) % 4];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < min) min = d;
+    }
+    return min;
+  }
+
   function warpPerspective(srcImageData, srcQuad, outW, outH) {
     const dstQuad = [
       { x: 0, y: 0 },
@@ -264,6 +274,7 @@
     quadOutSize,
     isQuadConvex,
     quadArea,
+    quadMinEdge,
     DEFAULT_BW,
     DEFAULT_BC,
     DEFAULT_LEVELS,
