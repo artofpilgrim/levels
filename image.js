@@ -153,8 +153,9 @@
     return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
   }
 
-  // Whangbo aspect-ratio recovery for a perspective-projected rectangle.
+  // Zhang/Whangbo aspect-ratio recovery for a perspective-projected rectangle.
   // Assumes square pixels, zero skew, principal point at image center.
+  // Formula order is TL, TR, BL, BR; app quads are TL, TR, BR, BL.
   // Returns width/height of the world rectangle, or null if non-recoverable
   // (parallel edges / no perspective / degenerate).
   function recoverAspectRatio(quad, imgW, imgH) {
@@ -162,8 +163,8 @@
     const u0 = imgW / 2, v0 = imgH / 2;
     const m1 = { x: quad[0].x - u0, y: quad[0].y - v0, z: 1 };
     const m2 = { x: quad[1].x - u0, y: quad[1].y - v0, z: 1 };
-    const m3 = { x: quad[2].x - u0, y: quad[2].y - v0, z: 1 };
-    const m4 = { x: quad[3].x - u0, y: quad[3].y - v0, z: 1 };
+    const m3 = { x: quad[3].x - u0, y: quad[3].y - v0, z: 1 };
+    const m4 = { x: quad[2].x - u0, y: quad[2].y - v0, z: 1 };
     const cross = (a, b) => ({
       x: a.y * b.z - a.z * b.y,
       y: a.z * b.x - a.x * b.z,
