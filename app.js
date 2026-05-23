@@ -35,18 +35,103 @@
     const [perspectiveMode, setPerspectiveMode] = useState(false);
     const [draftQuad, setDraftQuad] = useState(null);
     const [selectedQuadCorner, setSelectedQuadCorner] = useState(null);
+    const [perspectiveAspect, setPerspectiveAspect] = useState("auto");
     const [perspectiveResult, setPerspectiveResult] = useState(null);
     const [cropBeforePerspective, setCropBeforePerspective] = useState(null);
     const [processing, setProcessing] = useState(false);
+    const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
+    const [panning, setPanning] = useState(false);
+    const [historyVersion, setHistoryVersion] = useState(0);
     const fileInputRef = useRef(null);
+    const stageRef = useRef(null);
     const canvasRef = useRef(null);
     const toastTimerRef = useRef(null);
     const sessionRef = useRef(0);
+    const historyRef = useRef({ undo: [], redo: [] });
+    const historyMergeRef = useRef(null);
 
     function showToast(msg, kind) {
       setToast({ msg, kind });
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToast(null), 1800);
+    }
+
+    function cloneSettings(src) {
+      return {
+        bw: Object.assign({}, src.bw),
+        bc: Object.assign({}, src.bc),
+        levels: Object.assign({}, src.levels),
+        bwOn: src.bwOn,
+        invert: src.invert,
+        colorMode: src.colorMode,
+      };
+    }
+    function cloneCropRect(src) {
+      return src ? Object.assign({}, src) : null;
+    }
+    function makeHistorySnapshot() {
+      return {
+        settings: cloneSettings(settings),
+        preset,
+        crop: cloneCropRect(crop),
+        perspectiveResult,
+        cropBeforePerspective: cloneCropRect(cropBeforePerspective),
+      };
+    }
+    function restoreHistorySnapshot(snap) {
+      setSettings(cloneSettings(snap.settings));
+      setPreset(snap.preset);
+      setCrop(cloneCropRect(snap.crop));
+      setDraftCrop(null);
+      setCropMode(false);
+      setPerspectiveResult(snap.perspectiveResult);
+      setCropBeforePerspective(cloneCropRect(snap.cropBeforePerspective));
+      setDraftQuad(null);
+      setSelectedQuadCorner(null);
+      setPerspectiveMode(false);
+    }
+    function bumpHistory() {
+      setHistoryVersion((v) => v + 1);
+    }
+    function clearHistory() {
+      historyRef.current = { undo: [], redo: [] };
+      historyMergeRef.current = null;
+      bumpHistory();
+    }
+    function pushHistorySnapshot(snap, mergeKey) {
+      if (!image) return;
+      const now = Date.now();
+      const last = historyMergeRef.current;
+      if (mergeKey && last && last.key === mergeKey && now - last.time < 700) {
+        last.time = now;
+        return;
+      }
+      historyRef.current.undo.push(snap);
+      if (historyRef.current.undo.length > 40) historyRef.current.undo.shift();
+      historyRef.current.redo = [];
+      historyMergeRef.current = mergeKey ? { key: mergeKey, time: now } : null;
+      bumpHistory();
+    }
+    function recordHistory(mergeKey) {
+      pushHistorySnapshot(makeHistorySnapshot(), mergeKey);
+    }
+    function undoEdit() {
+      if (!historyRef.current.undo.length) return;
+      const current = makeHistorySnapshot();
+      const prev = historyRef.current.undo.pop();
+      historyRef.current.redo.push(current);
+      historyMergeRef.current = null;
+      restoreHistorySnapshot(prev);
+      bumpHistory();
+    }
+    function redoEdit() {
+      if (!historyRef.current.redo.length) return;
+      const current = makeHistorySnapshot();
+      const next = historyRef.current.redo.pop();
+      historyRef.current.undo.push(current);
+      historyMergeRef.current = null;
+      restoreHistorySnapshot(next);
+      bumpHistory();
     }
 
     const loadFile = useCallback((file) => {
@@ -77,6 +162,8 @@
         setCrop(null); setDraftCrop(null); setCropMode(false);
         setPerspectiveResult(null); setDraftQuad(null); setSelectedQuadCorner(null); setPerspectiveMode(false);
         setCropBeforePerspective(null);
+        setView({ zoom: 1, panX: 0, panY: 0 });
+        clearHistory();
         URL.revokeObjectURL(url);
         if (downscaled) {
           showToast("Downscaled " + origW + "×" + origH + " → " + w + "×" + hh + " (max " + MAX + "px)");
@@ -126,6 +213,17 @@
         const target = e.target;
         const isField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
         if (isField) return;
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+          e.preventDefault();
+          if (e.shiftKey) redoEdit();
+          else undoEdit();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+          e.preventDefault();
+          redoEdit();
+          return;
+        }
         if (cropMode) {
           if (e.key === "Enter") { e.preventDefault(); applyCrop(); return; }
           if (e.key === "Escape") { e.preventDefault(); cancelCrop(); return; }
@@ -144,7 +242,10 @@
           e.preventDefault();
           downloadImage();
         }
-        if (e.key === "i" && image && !cropMode && !perspectiveMode) setSettings((s) => Object.assign({}, s, { invert: !s.invert }));
+        if (e.key === "i" && image && !cropMode && !perspectiveMode) {
+          recordHistory("toggle-invert");
+          setSettings((s) => Object.assign({}, s, { invert: !s.invert }));
+        }
       };
       const onUp = (e) => { if (e.code === "Space") setShowOriginal(false); };
       window.addEventListener("keydown", onKey);
@@ -153,7 +254,7 @@
         window.removeEventListener("keydown", onKey);
         window.removeEventListener("keyup", onUp);
       };
-    }, [image, settings, cropMode, draftCrop, perspectiveMode, draftQuad, selectedQuadCorner, crop, perspectiveResult]);
+    }, [image, settings, cropMode, draftCrop, perspectiveMode, draftQuad, selectedQuadCorner, crop, perspectiveResult, historyVersion]);
 
     const workingSrc = useMemo(() => {
       if (!image) return null;
@@ -192,10 +293,17 @@
       return hh;
     }, [processedData, deferredSettings.colorMode]);
 
+    function parseAspect(value) {
+      if (!value || value === "auto") return null;
+      const parts = value.split(":").map(Number);
+      if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+      return parts[0] / parts[1];
+    }
+
     const perspectiveOutSize = useMemo(() => {
       if (!draftQuad || !workingSrc) return null;
-      return quadOutSize(draftQuad, workingSrc.width, workingSrc.height);
-    }, [draftQuad, workingSrc]);
+      return quadOutSize(draftQuad, workingSrc.width, workingSrc.height, parseAspect(perspectiveAspect));
+    }, [draftQuad, workingSrc, perspectiveAspect]);
 
     useEffect(() => {
       if (!workingSrc) return;
@@ -210,6 +318,89 @@
         ctx.putImageData(processedData, 0, 0);
       }
     }, [workingSrc, processedData, showOriginal]);
+
+    // React attaches `onWheel` as passive at the root, so e.preventDefault() is
+    // ignored there and the page (or stage) scrolls. Bind directly with passive:false.
+    useEffect(() => {
+      const el = stageRef.current;
+      if (!el || !image) return;
+      const onWheel = (e) => {
+        e.preventDefault();
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        const cx = e.clientX, cy = e.clientY;
+        setView((v) => {
+          const rect = el.getBoundingClientRect();
+          const zoom = clamp(v.zoom * factor, 1, 8);
+          if (Math.abs(zoom - v.zoom) < 0.001) return v;
+          if (zoom === 1) return { zoom: 1, panX: 0, panY: 0 };
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const px = cx - centerX;
+          const py = cy - centerY;
+          const scale = zoom / v.zoom;
+          return {
+            zoom,
+            panX: px - (px - v.panX) * scale,
+            panY: py - (py - v.panY) * scale,
+          };
+        });
+      };
+      el.addEventListener("wheel", onWheel, { passive: false });
+      return () => el.removeEventListener("wheel", onWheel);
+    }, [image]);
+
+    function setZoomAt(nextZoom, clientX, clientY) {
+      setView((v) => {
+        const stage = stageRef.current;
+        const rect = stage && stage.getBoundingClientRect();
+        const zoom = clamp(typeof nextZoom === "function" ? nextZoom(v.zoom) : nextZoom, 1, 8);
+        if (Math.abs(zoom - v.zoom) < 0.001) return v;
+        if (!rect || zoom === 1) return { zoom, panX: 0, panY: 0 };
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const px = (clientX == null ? centerX : clientX) - centerX;
+        const py = (clientY == null ? centerY : clientY) - centerY;
+        const scale = zoom / v.zoom;
+        return {
+          zoom,
+          panX: px - (px - v.panX) * scale,
+          panY: py - (py - v.panY) * scale,
+        };
+      });
+    }
+    function zoomBy(factor) {
+      setZoomAt((z) => z * factor);
+    }
+    function resetView() {
+      setView({ zoom: 1, panX: 0, panY: 0 });
+    }
+    function beginPan(e) {
+      if (!image) return;
+      const target = e.target;
+      const isControl = target && target.closest && target.closest("button, input, select");
+      const wantsPan = e.button === 1 || e.altKey || (e.button === 0 && view.zoom > 1 && !cropMode && !perspectiveMode);
+      if (!wantsPan || isControl) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX, startY = e.clientY;
+      const startPanX = view.panX, startPanY = view.panY;
+      setPanning(true);
+      const move = (ev) => {
+        setView((v) => Object.assign({}, v, {
+          panX: startPanX + ev.clientX - startX,
+          panY: startPanY + ev.clientY - startY,
+        }));
+      };
+      const up = () => {
+        setPanning(false);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    }
 
     function getExportBlob() {
       return new Promise((resolve) => {
@@ -284,7 +475,7 @@
         return;
       }
       const base = workingSrc;
-      const sz = quadOutSize(draftQuad, base.width, base.height);
+      const sz = quadOutSize(draftQuad, base.width, base.height, parseAspect(perspectiveAspect));
       const cropAtApply = crop;
       const job = sessionRef.current;
       setProcessing(true);
@@ -297,22 +488,26 @@
           showToast("Could not warp — quad is degenerate", "error");
           return;
         }
+        recordHistory();
         setCropBeforePerspective(cropAtApply);
         setPerspectiveResult(warped);
         setCrop(null);
         setPerspectiveMode(false);
         setDraftQuad(null);
         setSelectedQuadCorner(null);
+        resetView();
         showToast("Perspective applied (" + sz.w + "×" + sz.h + ")");
       }, 30);
     }
     function clearPerspective() {
+      recordHistory();
       setPerspectiveResult(null);
       setCrop(cropBeforePerspective);
       setCropBeforePerspective(null);
       setDraftQuad(null);
       setSelectedQuadCorner(null);
       setPerspectiveMode(false);
+      resetView();
     }
 
     function nudgeSelectedQuadCorner(e) {
@@ -376,15 +571,19 @@
     }
     function applyCrop() {
       if (draftCrop && draftCrop.w >= 2 && draftCrop.h >= 2) {
+        recordHistory();
         setCrop(draftCrop);
+        resetView();
       }
       setCropMode(false);
       setDraftCrop(null);
     }
     function clearCrop() {
+      recordHistory();
       setCrop(null);
       setDraftCrop(null);
       setCropMode(false);
+      resetView();
     }
 
     function beginCropDrag(e) {
@@ -448,28 +647,40 @@
     }
 
     function resetAll() {
+      recordHistory();
       setSettings(DEFAULT_SETTINGS);
       setPreset("Default");
     }
     function resetBW() {
+      recordHistory();
       setSettings((s) => Object.assign({}, s, { bw: Object.assign({}, DEFAULT_BW) }));
       setPreset("Default");
     }
     function resetLevels() {
+      recordHistory();
       setSettings((s) => Object.assign({}, s, { levels: Object.assign({}, DEFAULT_LEVELS) }));
     }
     function resetBC() {
+      recordHistory();
       setSettings((s) => Object.assign({}, s, { bc: Object.assign({}, DEFAULT_BC) }));
     }
     function applyPreset(name) {
+      recordHistory();
       setPreset(name);
       setSettings((s) => Object.assign({}, s, { bw: Object.assign({}, BW_PRESETS[name]) }));
     }
 
     const hasImage = !!image;
+    const canUndo = historyRef.current.undo.length > 0;
+    const canRedo = historyRef.current.redo.length > 0;
     const cornerNames = ["Top-left", "Top-right", "Bottom-right", "Bottom-left"];
     const selectedCornerName = selectedQuadCorner === null ? "No corner" : cornerNames[selectedQuadCorner];
+    const perspectiveAspectLabel = perspectiveAspect === "auto" ? "Auto" : perspectiveAspect;
     const perspectiveReady = !!(draftQuad && quadMinEdge(draftQuad) >= 8 && quadArea(draftQuad) >= 64 && isQuadConvex(draftQuad));
+    const viewStyle = {
+      transform: "translate(" + view.panX + "px, " + view.panY + "px) scale(" + view.zoom + ")",
+      "--inv-zoom": 1 / view.zoom,
+    };
 
     function quadGridLines(quad) {
       const mix = (a, b, t) => ({
@@ -525,6 +736,12 @@
           h("button", { className: "btn", onClick: resetAll, disabled: !hasImage },
             Icon.reset, " Reset"
           ),
+          h("button", { className: "btn", onClick: undoEdit, disabled: !canUndo, title: "Undo (Ctrl/⌘ Z)" },
+            Icon.undo, " Undo"
+          ),
+          h("button", { className: "btn", onClick: redoEdit, disabled: !canRedo, title: "Redo (Ctrl/⌘ Shift Z)" },
+            Icon.redo, " Redo"
+          ),
           h("button", { className: "btn", onClick: copyToClipboard, disabled: !hasImage },
             Icon.copy, " Copy ", h("span", { className: "kbd" }, "⌘C")
           ),
@@ -534,8 +751,12 @@
         )
       ),
 
-      h("div", { className: "stage" },
-        hasImage && h("div", { className: "canvas-wrap" },
+      h("div", {
+        ref: stageRef,
+        className: "stage" + (panning ? " panning" : "") + (view.zoom > 1 ? " zoomed" : ""),
+        onPointerDownCapture: beginPan,
+      },
+        hasImage && h("div", { className: "canvas-wrap", style: viewStyle },
           h("canvas", { ref: canvasRef, className: (workingSrc && workingSrc.width < 1000) ? "" : "fit-smooth" }),
           cropMode && h("div", {
             className: "crop-overlay",
@@ -595,6 +816,26 @@
           settings.colorMode && h("span", { className: "chip", style: { color: "var(--accent)" } }, "color"),
           settings.invert && h("span", { className: "chip", style: { color: "var(--accent)" } }, "inverted")
         ),
+        hasImage && h("div", { className: "zoom-controls" },
+          h("button", {
+            className: "zoom-btn",
+            onClick: () => zoomBy(0.8),
+            disabled: view.zoom <= 1.01,
+            title: "Zoom out",
+          }, "-"),
+          h("button", {
+            className: "zoom-readout",
+            onClick: resetView,
+            disabled: view.zoom === 1 && view.panX === 0 && view.panY === 0,
+            title: "Reset zoom and pan",
+          }, Math.round(view.zoom * 100) + "%"),
+          h("button", {
+            className: "zoom-btn",
+            onClick: () => zoomBy(1.25),
+            disabled: view.zoom >= 7.99,
+            title: "Zoom in",
+          }, "+")
+        ),
         hasImage && !cropMode && !perspectiveMode && h("div", { className: "stage-controls" },
           h("button", {
             className: "toggle-btn" + (showOriginal ? " held" : ""),
@@ -625,20 +866,41 @@
           }, Icon.reset, " Reset persp."),
           h("button", {
             className: "toggle-btn" + (settings.colorMode ? " on" : ""),
-            onClick: () => setSettings((s) => Object.assign({}, s, { colorMode: !s.colorMode })),
+            onClick: () => {
+              recordHistory("toggle-color");
+              setSettings((s) => Object.assign({}, s, { colorMode: !s.colorMode }));
+            },
             title: "Keep RGB color (skip B&W conversion)",
           }, Icon.color, " Color"),
           h("button", {
             className: "toggle-btn" + (settings.invert ? " on" : ""),
-            onClick: () => setSettings((s) => Object.assign({}, s, { invert: !s.invert })),
+            onClick: () => {
+              recordHistory("toggle-invert");
+              setSettings((s) => Object.assign({}, s, { invert: !s.invert }));
+            },
             title: "Invert (I)",
           }, Icon.invert, " Invert")
         ),
         hasImage && perspectiveMode && h("div", { className: "stage-controls" },
           h("span", { style: { color: "var(--fg-2)", fontSize: 12, padding: "0 6px" } },
             perspectiveOutSize
-              ? "Output " + perspectiveOutSize.w + " × " + perspectiveOutSize.h + " · " + selectedCornerName + " selected"
+              ? "Output " + perspectiveOutSize.w + " × " + perspectiveOutSize.h + " · " + perspectiveAspectLabel + " · " + selectedCornerName
               : "Drag corners to align with target rectangle"
+          ),
+          h("select", {
+            className: "aspect-select",
+            value: perspectiveAspect,
+            onChange: (e) => setPerspectiveAspect(e.target.value),
+            title: "Perspective output aspect",
+          },
+            h("option", { value: "auto" }, "Auto"),
+            h("option", { value: "1:1" }, "1:1"),
+            h("option", { value: "4:3" }, "4:3"),
+            h("option", { value: "3:2" }, "3:2"),
+            h("option", { value: "16:9" }, "16:9"),
+            h("option", { value: "5:4" }, "5:4"),
+            h("option", { value: "2:3" }, "2:3"),
+            h("option", { value: "9:16" }, "9:16")
           ),
           h("button", {
             className: "toggle-btn",
@@ -697,20 +959,33 @@
           bw: settings.bw,
           bwOn: settings.bwOn,
           colorMode: settings.colorMode,
-          onChange: (bw) => { setSettings((s) => Object.assign({}, s, { bw })); setPreset(""); },
-          onToggle: (v) => setSettings((s) => Object.assign({}, s, { bwOn: v })),
+          onChange: (bw) => {
+            recordHistory("bw");
+            setSettings((s) => Object.assign({}, s, { bw }));
+            setPreset("");
+          },
+          onToggle: (v) => {
+            recordHistory("bw-toggle");
+            setSettings((s) => Object.assign({}, s, { bwOn: v }));
+          },
           onReset: resetBW,
           preset,
           onPreset: applyPreset,
         }),
         h(BCPanel, {
           bc: settings.bc,
-          onChange: (bc) => setSettings((s) => Object.assign({}, s, { bc })),
+          onChange: (bc) => {
+            recordHistory("bc");
+            setSettings((s) => Object.assign({}, s, { bc }));
+          },
           onReset: resetBC,
         }),
         h(LevelsPanel, {
           levels: settings.levels,
-          onChange: (levels) => setSettings((s) => Object.assign({}, s, { levels })),
+          onChange: (levels) => {
+            recordHistory("levels");
+            setSettings((s) => Object.assign({}, s, { levels }));
+          },
           onReset: resetLevels,
           histogram,
         }),
@@ -726,6 +1001,11 @@
                 h("span", { style: { color: "var(--fg-2)" } }, "⌘ C"), "   copy result · ",
                 h("span", { style: { color: "var(--fg-2)" } }, "⌘ S"), " download"
               ),
+              h("div", null,
+                h("span", { style: { color: "var(--fg-2)" } }, "⌘ Z"), "   undo · ",
+                h("span", { style: { color: "var(--fg-2)" } }, "⇧⌘ Z"), " redo"
+              ),
+              h("div", null, h("span", { style: { color: "var(--fg-2)" } }, "Wheel"), "  zoom · drag to pan when zoomed"),
               h("div", null, h("span", { style: { color: "var(--fg-2)" } }, "2×click"), " slider → reset to default")
             )
           )
