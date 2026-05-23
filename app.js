@@ -34,6 +34,7 @@
     const [cropAspect, setCropAspect] = useState("free");
     const [perspectiveMode, setPerspectiveMode] = useState(false);
     const [draftQuad, setDraftQuad] = useState(null);
+    const [selectedQuadCorner, setSelectedQuadCorner] = useState(null);
     const [perspectiveResult, setPerspectiveResult] = useState(null);
     const [cropBeforePerspective, setCropBeforePerspective] = useState(null);
     const [processing, setProcessing] = useState(false);
@@ -74,7 +75,7 @@
         const data = ctx.getImageData(0, 0, w, hh);
         setImage({ name: file.name || "image", width: w, height: hh, srcImageData: data });
         setCrop(null); setDraftCrop(null); setCropMode(false);
-        setPerspectiveResult(null); setDraftQuad(null); setPerspectiveMode(false);
+        setPerspectiveResult(null); setDraftQuad(null); setSelectedQuadCorner(null); setPerspectiveMode(false);
         setCropBeforePerspective(null);
         URL.revokeObjectURL(url);
         if (downscaled) {
@@ -130,6 +131,7 @@
           if (e.key === "Escape") { e.preventDefault(); cancelCrop(); return; }
         }
         if (perspectiveMode) {
+          if (nudgeSelectedQuadCorner(e)) { e.preventDefault(); return; }
           if (e.key === "Enter") { e.preventDefault(); applyPerspective(); return; }
           if (e.key === "Escape") { e.preventDefault(); cancelPerspective(); return; }
         }
@@ -151,7 +153,7 @@
         window.removeEventListener("keydown", onKey);
         window.removeEventListener("keyup", onUp);
       };
-    }, [image, settings, cropMode, draftCrop, perspectiveMode, draftQuad, crop, perspectiveResult]);
+    }, [image, settings, cropMode, draftCrop, perspectiveMode, draftQuad, selectedQuadCorner, crop, perspectiveResult]);
 
     const workingSrc = useMemo(() => {
       if (!image) return null;
@@ -190,6 +192,11 @@
       return hh;
     }, [processedData, deferredSettings.colorMode]);
 
+    const perspectiveOutSize = useMemo(() => {
+      if (!draftQuad || !workingSrc) return null;
+      return quadOutSize(draftQuad, workingSrc.width, workingSrc.height);
+    }, [draftQuad, workingSrc]);
+
     useEffect(() => {
       if (!workingSrc) return;
       const c = canvasRef.current;
@@ -206,11 +213,12 @@
 
     function getExportBlob() {
       return new Promise((resolve) => {
-        if (!processedData) { resolve(null); return; }
+        if (!workingSrc) { resolve(null); return; }
+        const exportData = processImage(workingSrc, settings);
         const c = document.createElement("canvas");
-        c.width = processedData.width;
-        c.height = processedData.height;
-        c.getContext("2d").putImageData(processedData, 0, 0);
+        c.width = exportData.width;
+        c.height = exportData.height;
+        c.getContext("2d").putImageData(exportData, 0, 0);
         c.toBlob((blob) => resolve(blob), "image/png");
       });
     }
@@ -252,12 +260,14 @@
         { x: ix,     y: h - iy },
       ];
       setDraftQuad(seed);
+      setSelectedQuadCorner(0);
       setPerspectiveMode(true);
       setCropMode(false);
     }
     function cancelPerspective() {
       setPerspectiveMode(false);
       setDraftQuad(null);
+      setSelectedQuadCorner(null);
     }
     function applyPerspective() {
       if (!draftQuad || !workingSrc) return;
@@ -292,6 +302,7 @@
         setCrop(null);
         setPerspectiveMode(false);
         setDraftQuad(null);
+        setSelectedQuadCorner(null);
         showToast("Perspective applied (" + sz.w + "×" + sz.h + ")");
       }, 30);
     }
@@ -300,13 +311,37 @@
       setCrop(cropBeforePerspective);
       setCropBeforePerspective(null);
       setDraftQuad(null);
+      setSelectedQuadCorner(null);
       setPerspectiveMode(false);
+    }
+
+    function nudgeSelectedQuadCorner(e) {
+      if (!draftQuad || selectedQuadCorner === null || !workingSrc || e.metaKey || e.ctrlKey || e.altKey) return false;
+      let dx = 0, dy = 0;
+      const step = e.shiftKey ? 10 : 1;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dy = -step;
+      else if (e.key === "ArrowDown") dy = step;
+      else return false;
+      setDraftQuad((q) => {
+        if (!q) return q;
+        const next = q.slice();
+        const p = next[selectedQuadCorner];
+        next[selectedQuadCorner] = {
+          x: clamp(p.x + dx, 0, workingSrc.width),
+          y: clamp(p.y + dy, 0, workingSrc.height),
+        };
+        return next;
+      });
+      return true;
     }
 
     function beginQuadDrag(idx, e) {
       if (!canvasRef.current || !workingSrc) return;
       e.preventDefault();
       e.stopPropagation();
+      setSelectedQuadCorner(idx);
       const rectEl = canvasRef.current.getBoundingClientRect();
       const srcW = workingSrc.width, srcH = workingSrc.height;
       const sx = srcW / rectEl.width, sy = srcH / rectEl.height;
@@ -432,6 +467,38 @@
     }
 
     const hasImage = !!image;
+    const cornerNames = ["Top-left", "Top-right", "Bottom-right", "Bottom-left"];
+    const selectedCornerName = selectedQuadCorner === null ? "No corner" : cornerNames[selectedQuadCorner];
+    const perspectiveReady = !!(draftQuad && quadMinEdge(draftQuad) >= 8 && quadArea(draftQuad) >= 64 && isQuadConvex(draftQuad));
+
+    function quadGridLines(quad) {
+      const mix = (a, b, t) => ({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+      });
+      const lines = [];
+      [1 / 3, 2 / 3].forEach((t, i) => {
+        const top = mix(quad[0], quad[1], t);
+        const bottom = mix(quad[3], quad[2], t);
+        const left = mix(quad[0], quad[3], t);
+        const right = mix(quad[1], quad[2], t);
+        lines.push(h("line", {
+          key: "v" + i,
+          x1: top.x, y1: top.y, x2: bottom.x, y2: bottom.y,
+          stroke: "oklch(0.96 0.004 80 / 0.5)",
+          strokeWidth: 1,
+          vectorEffect: "non-scaling-stroke",
+        }));
+        lines.push(h("line", {
+          key: "h" + i,
+          x1: left.x, y1: left.y, x2: right.x, y2: right.y,
+          stroke: "oklch(0.96 0.004 80 / 0.5)",
+          strokeWidth: 1,
+          vectorEffect: "non-scaling-stroke",
+        }));
+      });
+      return lines;
+    }
 
     return h("div", { className: "app" },
       h("header", null,
@@ -500,18 +567,19 @@
                 stroke: "oklch(0.96 0.004 80)",
                 strokeWidth: 1,
                 vectorEffect: "non-scaling-stroke",
-              })
+              }),
+              h("g", { className: "perspective-grid" }, quadGridLines(draftQuad))
             ),
             draftQuad.map((p, i) =>
               h("div", {
                 key: i,
-                className: "quad-handle",
+                className: "quad-handle" + (selectedQuadCorner === i ? " active" : ""),
                 style: {
                   left: (p.x / workingSrc.width) * 100 + "%",
                   top: (p.y / workingSrc.height) * 100 + "%",
                 },
                 onPointerDown: (e) => beginQuadDrag(i, e),
-                title: ["Top-left", "Top-right", "Bottom-right", "Bottom-left"][i],
+                title: cornerNames[i],
               })
             )
           ),
@@ -568,7 +636,9 @@
         ),
         hasImage && perspectiveMode && h("div", { className: "stage-controls" },
           h("span", { style: { color: "var(--fg-2)", fontSize: 12, padding: "0 6px" } },
-            "Drag corners to align with target rectangle"
+            perspectiveOutSize
+              ? "Output " + perspectiveOutSize.w + " × " + perspectiveOutSize.h + " · " + selectedCornerName + " selected"
+              : "Drag corners to align with target rectangle"
           ),
           h("button", {
             className: "toggle-btn",
@@ -578,6 +648,7 @@
           h("button", {
             className: "toggle-btn on",
             onClick: applyPerspective,
+            disabled: !perspectiveReady,
             title: "Apply (Enter)",
           }, Icon.check, " Apply")
         ),

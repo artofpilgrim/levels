@@ -200,6 +200,10 @@ header{
 }
 .quad-handle:hover{ background: var(--accent); }
 .quad-handle:active{ cursor: grabbing; background: var(--accent); }
+.quad-handle.active{
+  background: var(--accent);
+  box-shadow: 0 0 0 2px oklch(0.16 0.006 80), 0 0 0 4px var(--accent), 0 2px 8px rgba(0,0,0,.55);
+}
 
 .stage-processing{
   position: absolute;
@@ -334,6 +338,12 @@ header{
 .toggle-btn:hover{ background: oklch(0.30 0.006 80 / 0.5); color: var(--fg); }
 .toggle-btn.on{ background: oklch(0.30 0.006 80); color: var(--fg); }
 .toggle-btn.held{ background: var(--accent); color: oklch(0.16 0.006 80); }
+.toggle-btn[disabled]{
+  opacity: .45;
+  cursor: not-allowed;
+}
+.toggle-btn[disabled]:hover{ background: transparent; color: var(--fg-2); }
+.toggle-btn.on[disabled]{ background: oklch(0.30 0.006 80 / 0.55); }
 
 /* Sidebar */
 aside{
