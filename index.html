@@ -799,14 +799,6 @@
     const out = new ImageData(width, height);
     const dst = out.data;
 
-    const w = {
-      r: settings.bw.r / 100,
-      y: settings.bw.y / 100,
-      g: settings.bw.g / 100,
-      c: settings.bw.c / 100,
-      b: settings.bw.b / 100,
-      m: settings.bw.m / 100,
-    };
     const lut = buildLevelsLUT(
       settings.levels.inBlack,
       settings.levels.inWhite,
@@ -818,6 +810,24 @@
       settings.bc.contrast
     );
 
+    if (settings.colorMode) {
+      for (let i = 0; i < src.length; i += 4) {
+        dst[i]     = lut[src[i]];
+        dst[i + 1] = lut[src[i + 1]];
+        dst[i + 2] = lut[src[i + 2]];
+        dst[i + 3] = src[i + 3];
+      }
+      return out;
+    }
+
+    const w = {
+      r: settings.bw.r / 100,
+      y: settings.bw.y / 100,
+      g: settings.bw.g / 100,
+      c: settings.bw.c / 100,
+      b: settings.bw.b / 100,
+      m: settings.bw.m / 100,
+    };
     for (let i = 0; i < src.length; i += 4) {
       let gray;
       if (settings.bwOn) {
@@ -941,6 +951,7 @@
     levels: Object.assign({}, DEFAULT_LEVELS),
     bwOn: true,
     invert: false,
+    colorMode: false,
   };
 
   const BW_PRESETS = {
@@ -1061,11 +1072,15 @@
   ];
 
   function BWMixer(props) {
-    const { bw, bwOn, onChange, onToggle, onReset, preset, onPreset } = props;
+    const { bw, bwOn, onChange, onToggle, onReset, preset, onPreset, colorMode } = props;
+    const active = bwOn && !colorMode;
     return h("section", { className: "panel" },
       h("div", { className: "panel-head" },
-        h("span", { className: "title" }, "Channel mixer"),
-        h("span", { style: { display: "flex", gap: 8, alignItems: "center" } },
+        h("span", { className: "title" },
+          "Channel mixer",
+          colorMode && h("span", { style: { color: "var(--fg-3)", textTransform: "none", letterSpacing: 0, fontWeight: 400, marginLeft: 6 } }, "— off in color mode")
+        ),
+        h("span", { style: { display: "flex", gap: 8, alignItems: "center", opacity: colorMode ? 0.4 : 1, pointerEvents: colorMode ? "none" : "auto" } },
           h("label", { className: "switch" },
             h("input", { type: "checkbox", checked: bwOn, onChange: (e) => onToggle(e.target.checked) }),
             h("span", { className: "track" })
@@ -1073,7 +1088,7 @@
           h("button", { className: "reset-link", onClick: onReset }, "Reset")
         )
       ),
-      h("div", { className: "panel-body", style: { opacity: bwOn ? 1 : 0.5, pointerEvents: bwOn ? "auto" : "none" } },
+      h("div", { className: "panel-body", style: { opacity: active ? 1 : 0.5, pointerEvents: active ? "auto" : "none" } },
         h("div", { className: "presets" },
           Object.keys(BW_PRESETS).map((name) =>
             h("button", {
@@ -1340,6 +1355,12 @@
     perspective: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
       h("path", { d: "M5 4 L19 7 L19 17 L5 20 Z" })
     ),
+    color: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" },
+      h("circle", { cx: "12", cy: "12", r: "9" }),
+      h("circle", { cx: "9", cy: "10", r: "1.4", fill: "currentColor", stroke: "none" }),
+      h("circle", { cx: "15", cy: "10", r: "1.4", fill: "currentColor", stroke: "none" }),
+      h("circle", { cx: "12", cy: "15", r: "1.4", fill: "currentColor", stroke: "none" })
+    ),
     check: h("svg", { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round" },
       h("path", { d: "M4 12l5 5L20 6" })
     ),
@@ -1498,9 +1519,16 @@
       if (!processedData) return null;
       const hh = new Array(256).fill(0);
       const d = processedData.data;
-      for (let i = 0; i < d.length; i += 4) hh[d[i]]++;
+      if (settings.colorMode) {
+        for (let i = 0; i < d.length; i += 4) {
+          const v = (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) | 0;
+          hh[v < 0 ? 0 : v > 255 ? 255 : v]++;
+        }
+      } else {
+        for (let i = 0; i < d.length; i += 4) hh[d[i]]++;
+      }
       return hh;
-    }, [processedData]);
+    }, [processedData, settings.colorMode]);
 
     useEffect(() => {
       if (!workingSrc) return;
@@ -1806,6 +1834,7 @@
           h("span", { className: "chip" }, (workingSrc ? workingSrc.width : image.width) + " × " + (workingSrc ? workingSrc.height : image.height)),
           perspectiveResult && !perspectiveMode && h("span", { className: "chip", style: { color: "var(--accent)" } }, "warped"),
           crop && !cropMode && h("span", { className: "chip", style: { color: "var(--accent)" } }, "cropped"),
+          settings.colorMode && h("span", { className: "chip", style: { color: "var(--accent)" } }, "color"),
           settings.invert && h("span", { className: "chip", style: { color: "var(--accent)" } }, "inverted")
         ),
         hasImage && !cropMode && !perspectiveMode && h("div", { className: "stage-controls" },
@@ -1836,6 +1865,11 @@
             onClick: clearPerspective,
             title: "Reset perspective",
           }, Icon.reset, " Reset persp."),
+          h("button", {
+            className: "toggle-btn" + (settings.colorMode ? " on" : ""),
+            onClick: () => setSettings((s) => Object.assign({}, s, { colorMode: !s.colorMode })),
+            title: "Keep RGB color (skip B&W conversion)",
+          }, Icon.color, " Color"),
           h("button", {
             className: "toggle-btn" + (settings.invert ? " on" : ""),
             onClick: () => setSettings((s) => Object.assign({}, s, { invert: !s.invert })),
@@ -1901,6 +1935,7 @@
         h(BWMixer, {
           bw: settings.bw,
           bwOn: settings.bwOn,
+          colorMode: settings.colorMode,
           onChange: (bw) => { setSettings((s) => Object.assign({}, s, { bw })); setPreset(""); },
           onToggle: (v) => setSettings((s) => Object.assign({}, s, { bwOn: v })),
           onReset: resetBW,
