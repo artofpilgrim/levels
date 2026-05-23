@@ -178,13 +178,13 @@
     const k3 = dot(c14, m2) / den3;
     const n2 = { x: k2 * m2.x - m1.x, y: k2 * m2.y - m1.y, z: k2 * m2.z - m1.z };
     const n3 = { x: k3 * m3.x - m1.x, y: k3 * m3.y - m1.y, z: k3 * m3.z - m1.z };
-    const denomF = n2.x * n3.x + n2.y * n3.y;
+    const denomF = n2.z * n3.z;
     if (Math.abs(denomF) < 1e-9) return null;
-    const f2 = -(n2.z * n3.z) / denomF;
+    const f2 = -(n2.x * n3.x + n2.y * n3.y) / denomF;
     if (f2 <= 0 || !isFinite(f2)) return null;
     const ar2 =
-      (n2.z * n2.z + (n2.x * n2.x + n2.y * n2.y) / f2) /
-      (n3.z * n3.z + (n3.x * n3.x + n3.y * n3.y) / f2);
+      (n2.x * n2.x + n2.y * n2.y + n2.z * n2.z * f2) /
+      (n3.x * n3.x + n3.y * n3.y + n3.z * n3.z * f2);
     if (ar2 <= 0 || !isFinite(ar2)) return null;
     return Math.sqrt(ar2);
   }
